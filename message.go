@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -67,6 +67,10 @@ const (
 	PADNUM        = "%03d"
 )
 
+func NewMessage() *Message {
+	return &Message{}
+}
+
 // String returns the IRC-formatted string version of a message object.
 // This is here to satisfy a Stringer interface
 func (msg *Message) String() string {
@@ -74,9 +78,8 @@ func (msg *Message) String() string {
 }
 
 // RenderBuffer returns the IRC-formatted byte buffer version of a message object.
-// Will return an error if there is something wrong with the meesage.
 func (msg *Message) RenderBuffer() *bytes.Buffer {
-	buffer := bufpool.New()
+	buffer := bufPool.New()
 
 	if msg.Sender != EMPTY {
 		buffer.WriteString(COLON)
@@ -118,59 +121,14 @@ func (msg *Message) Render() string {
 
 // Debug prints a message object to a string with verbose information about the object fields.
 func (msg *Message) Debug() string {
-	bytes, _ := json.Marshal(msg) // Ignoring the error because it literally can't happen.
-	return string(bytes)
+	data, _ := json.Marshal(msg) // Ignoring the error because it literally can't happen.
+	return string(data)
 }
 
-func (msg *Message) scrub() {
+func (msg *Message) Scrub() {
 	msg.Code = 0
 	msg.Command = ""
 	msg.Sender = ""
-	msg.Params = nil
 	msg.Text = ""
-}
-
-// MessagePool holds the Message objects in a channel as a queue.
-type MessagePool struct {
-	Messages chan *Message
-}
-
-// NewMessagePool creates a new pool of Messages.
-func NewMessagePool(max int) *MessagePool {
-	return &MessagePool{
-		Messages: make(chan *Message, max),
-	}
-}
-
-// Warmup fills the MessagePool with the specified number of objects
-// up to one below the maximum capacity of the internal channel
-func (pool *MessagePool) Warmup(num int) {
-	for i := 0; i < num; i++ {
-		select {
-		case pool.Messages <- &Message{}:
-			/* nop */
-		default:
-			return
-		}
-	}
-}
-
-// New takes a Message from the pool.
-func (pool *MessagePool) New() (msg *Message) {
-	select {
-	case msg = <-pool.Messages:
-	default:
-		msg = &Message{}
-	}
-	return
-}
-
-// Recycle returns a Message to the pool.
-func (pool *MessagePool) Recycle(msg *Message) {
-	msg.scrub()
-	select {
-	case pool.Messages <- msg:
-	default:
-		// let it go, let it go...
-	}
+	msg.Params = nil
 }

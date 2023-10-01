@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -45,7 +45,7 @@ func Parse(data string) (*Message, error) {
 	// }
 
 	data = strings.TrimSpace(data)
-	if len(data) <= 0 {
+	if len(data) == 0 {
 		return nil, ErrWhitespace
 	}
 
@@ -57,7 +57,7 @@ func Parse(data string) (*Message, error) {
 		// data = split[1]
 	}
 
-	msg := msgpool.New()
+	msg := msgPool.New()
 
 	split := strings.SplitN(data, ":", 2)
 	args := strings.Fields(split[0])

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -27,7 +27,8 @@
 package dircd
 
 import (
-	"github.com/btnmasher/util"
+	"github.com/btnmasher/dircd/shared/sliceutils"
+	"github.com/btnmasher/dircd/shared/stringutils"
 )
 
 // ReplyWelcome returns the configured welcome message to
@@ -35,7 +36,7 @@ import (
 // and registers successfully.
 func (conn *Conn) ReplyWelcome() {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	msg.Code = ReplyWelcome
 	msg.Params = []string{conn.user.Nick()}
@@ -49,11 +50,11 @@ func (conn *Conn) ReplyWelcome() {
 // a valid subcommand per the IRCv3 CAP specifications.
 func (conn *Conn) ReplyInvalidCapCommand(cmd string) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	nick := conn.user.Nick()
 
-	if len(nick) < 1 {
+	if len(nick) == 0 {
 		nick = "*"
 	}
 
@@ -73,14 +74,14 @@ func (conn *Conn) ReplyInvalidCapCommand(cmd string) {
 // ReplyNeedMoreParams returns an error message to the user
 // in the event that a command issued by the user that does
 // not satisfy the minimum number of parameters expected of
-// the particualar command.
+// the particular command.
 func (conn *Conn) ReplyNeedMoreParams(cmd string) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	nick := conn.user.Nick()
 
-	if len(nick) < 1 {
+	if len(nick) == 0 {
 		nick = "*"
 	}
 
@@ -102,11 +103,11 @@ func (conn *Conn) ReplyNeedMoreParams(cmd string) {
 // not satisfy the requirement of specifying a nickname.
 func (conn *Conn) ReplyNoNicknameGiven() {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	nick := conn.user.Nick()
 
-	if len(nick) < 1 {
+	if len(nick) == 0 {
 		nick = "*"
 	}
 
@@ -123,7 +124,7 @@ func (conn *Conn) ReplyNoNicknameGiven() {
 // to know of the targets existence due to permissions.
 func (conn *Conn) ReplyNoSuchNick(nick string) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	msg.Params = []string{conn.user.Nick(), nick}
 	msg.Code = ReplyNoSuchNick
@@ -138,7 +139,7 @@ func (conn *Conn) ReplyNoSuchNick(nick string) {
 // to know of the targets existence due to permissions.
 func (conn *Conn) ReplyNoSuchChan(channel string) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	msg.Params = []string{conn.user.Nick(), channel}
 	msg.Code = ReplyNoSuchChannel
@@ -152,27 +153,27 @@ func (conn *Conn) ReplyNoSuchChan(channel string) {
 // found in RouteCommand()
 func (conn *Conn) ReplyNotImplemented(cmd string) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	msg.Code = ReplyUnknownCommand
 	msg.Params = []string{conn.user.Nick(), cmd}
 	msg.Text = ErrNotImplemented.Error()
 
-	log.Infof("irc: Command not implemented encountered for: %s", cmd)
+	conn.logger.Warnf("command not implemented encountered for: %s", cmd)
 
 	conn.Write(msg.RenderBuffer())
 }
 
 // ReplyNotRegistered returns an error message to the user
-// in the event the given command is not apart of the handlers
+// in the event the given command is not a part of the handlers
 // found in RouteCommand()
 func (conn *Conn) ReplyNotRegistered() {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	nick := conn.user.Nick()
 
-	if len(nick) < 1 {
+	if len(nick) == 0 {
 		nick = "*"
 	}
 
@@ -187,7 +188,7 @@ func (conn *Conn) ReplyNotRegistered() {
 // the given channel.
 func (conn *Conn) ReplyChannelTopic(channel *Channel) {
 	msg := conn.newMessage()
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	msg.Code = ReplyChanTopic
 	msg.Params = []string{conn.user.Nick(), channel.Name()}
@@ -198,70 +199,88 @@ func (conn *Conn) ReplyChannelTopic(channel *Channel) {
 // ReplyChannelNames returns the topic reply to the user for
 // the given channel.
 func (conn *Conn) ReplyChannelNames(channel *Channel) {
-
-	nicklist := channel.GetNicks()
-	unick := conn.user.Nick()
-	cname := channel.Name()
-	params := []string{unick, "=", cname}
+	nickList := channel.GetNicks()
+	userNick := conn.user.Nick()
+	channelName := channel.Name()
+	params := []string{userNick, "=", channelName}
 
 	temp := conn.newMessage()
 	temp.Code = ReplyNames
 	temp.Params = params
 
-	joined := util.ChunkJoinStrings(nicklist, MaxMsgLength-len(temp.String()), SPACE)
-	msgpool.Recycle(temp)
+	joined := stringutils.ChunkJoinStrings(MaxMsgLength-len(temp.String()), SPACE, nickList...)
+	msgPool.Recycle(temp)
 
-	msgs := []*Message{}
+	messages := make([]*Message, 0, len(joined)+1)
 
 	for _, line := range joined {
 		msg := conn.newMessage()
-		defer msgpool.Recycle(msg)
-
-		msgs = append(msgs, msg)
-
 		msg.Code = ReplyNames
 		msg.Params = params
 		msg.Text = line
+		messages = append(messages, msg)
 	}
 
 	end := conn.newMessage()
 	end.Code = ReplyEndOfNames
-	end.Params = []string{unick, cname}
+	end.Params = []string{userNick, channelName}
 	end.Text = "End of NAMES list."
-	msgs = append(msgs, end)
+	messages = append(messages, end)
 
-	for _, m := range msgs {
-		conn.Write(m.RenderBuffer())
+	defer func() {
+		for i := range messages {
+			msgPool.Recycle(messages[i])
+		}
+	}()
+
+	for i := range messages {
+		conn.Write(messages[i].RenderBuffer())
 	}
 }
 
-// ReplyISupport returns the topic reply to the user for
-// the given channel.
+// ReplyISupport returns the ISupport information about the server
 func (conn *Conn) ReplyISupport() {
 
 	support := conn.server.ISupport()
 	params := []string{conn.user.Nick()}
 
 	temp := conn.newMessage()
+	defer msgPool.Recycle(temp)
 	temp.Code = ReplyISupport
 	temp.Params = params
 
-	joined := util.ChunkJoinStrings(support, MaxMsgLength-len(temp.String()), SPACE)
-	msgpool.Recycle(temp)
+	var paramLines []string
 
-	msgs := []*Message{}
-
-	for _, line := range joined {
-		msg := conn.newMessage()
-		defer msgpool.Recycle(msg)
-
-		msg.Code = ReplyISupport
-		msg.Params = append(params, line)
-
-		msgs = append(msgs, msg)
+	// Spec only allows for 15 max parameters, with two parameters being taken up by the client host and message text
+	if len(support) <= MaxMsgParams-2 {
+		paramLines = stringutils.ChunkJoinStrings(MaxMsgLength-len(temp.String()), SPACE, support...)
+	} else {
+		// We have more parameters than can fit onto a single message, chunk them into groups of 13
+		supportChunks := sliceutils.ChunkBy(support, MaxMsgParams-2)
+		for i := range supportChunks {
+			joinedPartial := stringutils.ChunkJoinStrings(MaxMsgLength-len(temp.String()), SPACE, supportChunks[i]...)
+			paramLines = append(paramLines, joinedPartial...)
+		}
 	}
 
-	for _, m := range msgs {
+	messages := make([]*Message, 0, len(paramLines))
+
+	for i := range paramLines {
+		msg := conn.newMessage()
+
+		msg.Code = ReplyISupport
+		msg.Params = append(params, paramLines[i])
+
+		messages = append(messages, msg)
+	}
+
+	defer func() {
+		for i := range messages {
+			msgPool.Recycle(messages[i])
+		}
+	}()
+
+	for _, m := range messages {
 		conn.Write(m.RenderBuffer())
 	}
 }

@@ -24,55 +24,48 @@
    POSSIBILITY OF SUCH DAMAGE.
 */
 
-package dircd
+package stringutils
 
-// Command constants.
-const (
-	// RFC 1459
-	CmdPrivMsg  string = "PRIVMSG"
-	CmdNotice          = "NOTICE"
-	CmdUserhost        = "USERHOST"
-	CmdPass            = "PASS"
-	CmdPing            = "PING"
-	CmdPong            = "PONG"
-	CmdTopic           = "TOPIC"
-	CmdJoin            = "JOIN"
-	CmdPart            = "PART"
-	CmdKick            = "KICK"
-	CmdQuit            = "QUIT"
-	CmdNick            = "NICK"
-	CmdUser            = "USER"
-	CmdMode            = "MODE"
-	CmdWallops         = "WALLOPS"
-	CmdInvite          = "INVITE"
-	CmdKill            = "KILL"
+import "bytes"
 
-	// CTCP
-	CmdCTCPPing       = "CTCP PING"
-	CmdCTCPVersion    = "CTCP VERSION"
-	CmdCTCPSource     = "CTCP SOURCE"
-	CmdCTCPTime       = "CTCP TIME"
-	CmdCTCPUserInfo   = "CTCP USERINFO"
-	CmdCTCPClientInfo = "CTCP CLIENTINFO"
-	CmdCTCPError      = "CTCP ERRMSG"
-	CmdCTCPFinger     = "CTCP FINGER"
-	CmdCTCPAction     = "CTCP ACTION"
+// ChunkJoinStrings takes a list of individual parameters and joins them to strings
+// separated by sep, limited by the maxlength. For each item, if appending the item
+// would breach the maxlength, it instead starts to build a new string. Once all
+// the strings are built, it returns the list of strings.
+func ChunkJoinStrings(maxlength int, sep string, params ...string) []string {
+	var buffer bytes.Buffer
+	currentLength := 0
+	var joined []string
+	nextBuffer := false
 
-	// IRCv3 Base
-	CmdCap      = "CAP"
-	CmdCapLs    = "CAP LS"
-	CmdCapList  = "CAP LIST"
-	CmdCapReq   = "CAP REQ"
-	CmdCapAck   = "CAP ACK"
-	CmdCapNak   = "CAP NAK"
-	CmdCapEnd   = "CAP END"
-	CmdAuth     = "AUTHENTICATE"
-	CmdMetadata = "METADATA"
-	CmdError    = "ERROR"
+	for i := range params {
+		// Check if we have enough room to write the item
+		if currentLength+len(params[i]) <= maxlength {
+			buffer.WriteString(params[i])
+			currentLength += len(params[i])
+		} else { // Not enough room, reiterate for the next item
+			nextBuffer = true
+		}
 
-	// IRCv3 account-notify
-	CmdAccount = "ACCOUNT"
+		// Check if we're currently on the last item or if we can add another with a separator
+		if i+1 < len(params) && currentLength+len(sep)+len(params[i+1]) <= maxlength {
+			buffer.WriteString(sep)
+			currentLength += len(sep)
+		} else { // Last item, or we can't fit the next item with a separator
+			nextBuffer = true
+		}
 
-	// IRCv3 away-notify
-	CmdAway = "AWAY"
-)
+		if nextBuffer {
+			currentLength = 0
+			nextBuffer = false
+			joined = append(joined, buffer.String())
+			buffer.Reset()
+		}
+	}
+
+	if buffer.Len() > 0 { // Finished iterating without hitting max length on the current pass.
+		joined = append(joined, buffer.String())
+	}
+
+	return joined
+}

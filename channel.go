@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -28,14 +28,16 @@ package dircd
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"sync"
 
-	"github.com/btnmasher/util"
+	"github.com/btnmasher/dircd/shared/concurrentmap"
 )
 
 // Channel represents an IRC channel
 type Channel struct {
-	sync.RWMutex
+	mu sync.RWMutex
 
 	name  string
 	topic string
@@ -46,83 +48,85 @@ type Channel struct {
 	savedOwner string // Owner username
 
 	// Active Lists
-	Nicks   *UserMap
-	Ops     *UserMap
-	HalfOps *UserMap
-	Voiced  *UserMap
+	Nicks   UserMap
+	Ops     UserMap
+	HalfOps UserMap
+	Voiced  UserMap
 
 	// Persisted Lists
-	// map[hostpattern]setter
-	OpList     *util.ConcurrentMapString
-	HalfOpList *util.ConcurrentMapString
-	VoiceList  *util.ConcurrentMapString
-	BanList    *util.ConcurrentMapString
-	InviteList *util.ConcurrentMapString
+	// map[hostPattern]setter
+	OpList     concurrentmap.ConcurrentMap[string, string]
+	HalfOpList concurrentmap.ConcurrentMap[string, string]
+	VoiceList  concurrentmap.ConcurrentMap[string, string]
+	BanList    concurrentmap.ConcurrentMap[string, string]
+	InviteList concurrentmap.ConcurrentMap[string, string]
 }
+
+type ChanMap concurrentmap.ConcurrentMap[string, *Channel]
 
 // NewChannel initializes a Channel with the given name and owner.
 func NewChannel(cname string, creator *User) *Channel {
 	channel := &Channel{
 		name:       cname,
 		owner:      creator,
-		Nicks:      NewUserMap(),
-		Ops:        NewUserMap(),
-		HalfOps:    NewUserMap(),
-		Voiced:     NewUserMap(),
-		OpList:     util.NewConcurrentMapString(),
-		HalfOpList: util.NewConcurrentMapString(),
-		VoiceList:  util.NewConcurrentMapString(),
-		BanList:    util.NewConcurrentMapString(),
-		InviteList: util.NewConcurrentMapString(),
+		Nicks:      concurrentmap.New[string, *User](),
+		Ops:        concurrentmap.New[string, *User](),
+		HalfOps:    concurrentmap.New[string, *User](),
+		Voiced:     concurrentmap.New[string, *User](),
+		OpList:     concurrentmap.New[string, string](),
+		HalfOpList: concurrentmap.New[string, string](),
+		VoiceList:  concurrentmap.New[string, string](),
+		BanList:    concurrentmap.New[string, string](),
+		InviteList: concurrentmap.New[string, string](),
 	}
 
 	return channel
 }
 
-// Name returns the name of the channel in a currency safe manner.
+// Name returns the name of the channel in a currency safe manner
 func (channel *Channel) Name() string {
-	channel.RLock()
-	defer channel.RUnlock()
+	channel.mu.RLock()
+	defer channel.mu.RUnlock()
 
 	return channel.name
 }
 
-// SetName sets the name of the channel in a currency safe manner.
+// SetName sets the name of the channel in a currency safe manner
 func (channel *Channel) SetName(new string) {
-	channel.Lock()
-	defer channel.Unlock()
+	channel.mu.Lock()
+	defer channel.mu.Unlock()
 
 	channel.name = new
 }
 
-// Topic returns the topic of the channel in a currency safe manner.
+// Topic returns the topic of the channel in a currency safe manner
 func (channel *Channel) Topic() string {
-	channel.RLock()
-	defer channel.RUnlock()
+	channel.mu.RLock()
+	defer channel.mu.RUnlock()
 
 	return channel.topic
 }
 
-// SetTopic sets the topic of the channel in a currency safe manner.
+// SetTopic sets the topic of the channel in a currency safe manner
 func (channel *Channel) SetTopic(new string) {
-	channel.Lock()
-	defer channel.Unlock()
+	channel.mu.Lock()
+	defer channel.mu.Unlock()
 
 	channel.topic = new
 }
 
-// Owner returns the owner of the channel in a currency safe manner.
+// Owner returns the owner of the channel in a currency safe manner
 func (channel *Channel) Owner() *User {
-	channel.RLock()
-	defer channel.RUnlock()
+	channel.mu.RLock()
+	defer channel.mu.RUnlock()
 
 	return channel.owner
 }
 
-// SetOwner sets the owner of the channel in a currency safe manner.
+// SetOwner sets the owner of the channel in a currency safe manner
 func (channel *Channel) SetOwner(new *User) {
-	channel.Lock()
-	defer channel.Unlock()
+	channel.mu.Lock()
+	defer channel.mu.Unlock()
 
 	channel.owner = new
 	channel.savedOwner = new.Name()
@@ -130,58 +134,68 @@ func (channel *Channel) SetOwner(new *User) {
 
 // TODO: channel modes
 
-// Send takes a message, then iterates the list of Users joined
-// to the channel stored in the Nicks map, and sends the message
-// to each of the User's underlying connection.
+// Send takes a message, then iterates the list of Users joined to the channel stored
+// in the Nicks map, and sends the message to each of the User's underlying connection.
 func (channel *Channel) Send(msg *Message, exclude string) {
-	channel.RLock()
-	defer channel.RUnlock()
+	channel.mu.RLock()
+	defer channel.mu.RUnlock()
 
 	// TODO: Check if sender is allowed to send
 
 	buf := msg.RenderBuffer()
 
-	channel.Nicks.ForEach(func(user *User) {
-		if user.Nick() != exclude {
+	_ = channel.Nicks.ForEach(func(nick string, user *User) error {
+		if nick != exclude {
 			user.conn.Write(buf)
 		}
+		return nil
 	})
 }
 
-// Join adds the user to the channel and alerts all channel
-// members of the event.
+// Join adds the user to the channel and alerts all channel members of the event.
 func (channel *Channel) Join(user *User, msg *Message) bool {
-	channel.RLock()
-	defer channel.RUnlock()
+	channel.mu.RLock()
+	defer channel.mu.RUnlock()
 
 	// TODO: Check if sender is allowed to send
 
-	channel.Nicks.Add(user.Nick(), user)
+	channel.Nicks.Set(user.Nick(), user)
 	channel.Send(msg, "")
 
 	return true
 }
 
-// Part removes the user from the channel and alerts all channel
-// members of the event.
-func (channel *Channel) Part(user *User, msg *Message) {
-	channel.Send(msg, "")
-	channel.Nicks.Del(user.Nick())
+// RemoveUser removes the user from the channel and alerts all channel members of the event.
+func (channel *Channel) RemoveUser(nick string, msg *Message) error {
+	if !channel.Nicks.Exists(nick) {
+		return fmt.Errorf("nick [%s] not present in channel [%s]", nick, channel.Name())
+	}
+	channel.Send(msg, nick)
+	channel.Nicks.Delete(nick)
+	channel.Ops.Delete(nick)
+	channel.HalfOps.Delete(nick)
+	channel.Voiced.Delete(nick)
+	return nil
 }
 
-// GetNicks returns an array of the current nicknames of the users
-// in the chanel.
+func (channel *Channel) ChangeNick(oldNick, newNick string, msg *Message) error {
+	if !channel.Nicks.ChangeKey(oldNick, newNick) {
+		return errors.New("nickname not present in channel")
+	}
+	channel.Ops.ChangeKey(oldNick, newNick)
+	channel.HalfOps.ChangeKey(oldNick, newNick)
+	channel.Voiced.ChangeKey(oldNick, newNick)
+	channel.Send(msg, newNick)
+
+	return nil
+}
+
+// GetNicks returns an array of the current nicknames of the users in the channel.
 func (channel *Channel) GetNicks() []string {
-	channel.RLock()
-	defer channel.RUnlock()
-
 	var buffer bytes.Buffer
-	nicks := make([]string, channel.Nicks.Length())
-	i := 0
+	nicks := make([]string, 0, channel.Nicks.Length())
 
-	channel.Nicks.ForEach(func(user *User) {
-		nick := user.Nick()
-
+	channel.Nicks.ForEach(func(nick string, user *User) error {
 		switch {
 		case channel.owner.Nick() == nick:
 			buffer.WriteRune('~')
@@ -195,10 +209,9 @@ func (channel *Channel) GetNicks() []string {
 
 		buffer.WriteString(nick)
 
-		nicks[i] = buffer.String()
+		nicks = append(nicks, buffer.String())
 		buffer.Reset()
-		i++
-
+		return nil
 	})
 
 	return nicks

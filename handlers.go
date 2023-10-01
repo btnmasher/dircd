@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -28,17 +28,19 @@ package dircd
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 )
 
 // Handlers is a map of functions where the handlers are stored.
 var Handlers = make(map[string]MessageHandler)
+var UnregAllowedCommands = make(map[string]struct{})
 
 // MessageHandler defines the function signature of a handler used to
 // process IRC messages.
 type MessageHandler func(*Conn, *Message)
 
-// All of command handler functions do not return an error. Instead it
+// All command handler functions do not return an error. Instead, it
 // must process all error conditions relating to the command and reply
 // to the user in the correct way specified by RFC2812.
 
@@ -48,10 +50,10 @@ type MessageHandler func(*Conn, *Message)
 // server will broadcast the QUIT message to all channels the user is
 // joined to.
 //
-//    Command: QUIT
-//    Parameters: :<reason>
+//	Command: QUIT
+//	Parameters: :<reason>
 func HandleQuit(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 	conn.doQuit(msg.Text)
 }
 
@@ -60,80 +62,94 @@ func HandleQuit(conn *Conn, msg *Message) {
 // First, it checks if the current nickname is in use by the user issuing
 // the command; by another user on the server; or disallowed by the server
 // configuration. Then it checks the validity of the nickname formatting
-// before finally, if all of the requirements are met, sets the User object
+// before finally, if all the requirements are met, sets the User object
 // Nick field to the specified name in the command parameters.
 //
-//    Command: NICK
-//    Parameters: <nickname>
+//	Command: NICK
+//	Parameters: <nickname>
 func HandleNick(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
-	ok := true
+	defer msgPool.Recycle(msg)
+
+	logger := conn.logger.WithField("handler", "NICK")
 
 	if !enoughParams(msg, 1) {
-		conn.ReplyNoNicknameGiven()
-		return
+		msg.Params = strings.Fields(msg.Text) // Some dumb ass clients don't follow the spec and add the nickname to the text field (mIRC)
+		if !enoughParams(msg, 1) {
+			conn.ReplyNoNicknameGiven()
+			return
+		}
+		logger.Warn("received non-standard command format, adapting")
 	}
 
 	reply := conn.newMessage()
-	defer msgpool.Recycle(reply)
-
-	reply.Code = ReplyNicknameInUse
+	defer msgPool.Recycle(reply)
 
 	if conn.user.Nick() == msg.Params[0] {
 		reply.Text = ErrNickAlreadySet.String()
-		ok = false
+		reply.Code = ReplyNicknameInUse
+		conn.Write(reply.RenderBuffer())
+		return
 	}
 
-	if ok && conn.server.Nicks.Exists(msg.Params[0]) {
-		reply.Text = ErrNickInUse.String()
-		ok = false
+	if validationErr, code := conn.server.ValidateName(msg.Params[0]); validationErr != nil {
+		reply.Text = validationErr.Error()
+		reply.Code = code
+		conn.Write(reply.RenderBuffer())
+		return
 	}
 
-	// TODO: Nick restriction check
+	reply.Sender = conn.user.Hostmask()
+	oldNick := conn.user.Nick()
+	newNick := msg.Params[0]
+	conn.user.SetNick(newNick)
 
-	// TODO: Nick formatting checks
-	// This ties into configurations such as:
-	// - nick length
-	// - reserved nicks
-
-	if ok { // Nick formatting check stub
-		conn.user.SetNick(msg.Params[0])
-		reply.Code = ReplyNone
-		reply.Command = CmdNick
-		reply.Text = ""
-		// TODO: Send nick change to all channels user is joined to.
+	if !conn.isRegistered() {
+		return
 	}
 
-	reply.Params = []string{conn.user.Nick()}
+	reply.Code = ReplyNone
+	reply.Command = CmdNick
+	reply.Params = msg.Params[0:1]
+	reply.Text = ""
 
 	conn.Write(reply.RenderBuffer())
+
+	if conn.channels.Length() > 0 {
+		changeErr := conn.channels.ForEach(func(name string, channel *Channel) error {
+			return channel.ChangeNick(oldNick, newNick, reply)
+		})
+		if changeErr != nil {
+			logger.Error(fmt.Errorf("error encountered attempting to change nick for channel: %w", changeErr))
+			// TODO: this is real bad cause then state is gonna be all fuckered, need some reconciliation
+		}
+	}
 }
 
 // HandleUser processes a USER command.
 //
-// First, it checks if the specieifed username is in use by the user issuing
+// First, it checks if the specified username is in use by the user issuing
 // the command; by another user on the server; or disallowed by the server
 // configuration. Then it checks the validity of the username formatting
-// before finally, if all of the requirements are met, sets the User object
+// before finally, if all the requirements are met, sets the User object
 // Name field to the specified name in the command parameters.
 //
-//    Command: USER
-//    Parameters: <username> <modemask> -0(unused)- :[realname]
+//	Command: USER
+//	Parameters: <username> <modemask> -0(unused)- :[realname]
 func HandleUser(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	if !enoughParams(msg, 3) {
 		conn.ReplyNeedMoreParams(msg.Command)
 		return
 	}
 
-	if len(conn.user.Nick()) < 1 {
+	if len(conn.user.Nick()) == 0 {
 		conn.ReplyNoNicknameGiven()
 		return
 	}
 
 	reply := conn.newMessage()
-	defer msgpool.Recycle(reply)
+	defer msgPool.Recycle(reply)
 
 	reply.Params = []string{conn.user.Nick()}
 	reply.Code = ReplyAlreadyRegistered
@@ -161,7 +177,7 @@ func HandleUser(conn *Conn, msg *Message) {
 	conn.user.SetName(msg.Params[0])
 	conn.user.SetRealname(msg.Text)
 	conn.user.SetHostname(conn.remAddr)
-	conn.regiserUser()
+	conn.registerUser()
 
 	if !conn.capRequested || conn.capNegotiated {
 		conn.ReplyWelcome()
@@ -172,17 +188,17 @@ func HandleUser(conn *Conn, msg *Message) {
 // HandleCap processes the CAP command and sub commands for
 // negotiating capabilties per the IRCv3.2 spec.
 //
-//    Command: CAP
-//    Parameters: <subcommand> [param] :[capabiliy] [capability]
+//	Command: CAP
+//	Parameters: <subcommand> [param] :[capabiliy] [capability]
 func HandleCap(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	if !enoughParams(msg, 2) {
 		conn.ReplyInvalidCapCommand(msg.Command)
 		return
 	}
 
-	switch msg.Params[1] {
+	switch msg.Params[0] {
 	case "LS":
 		fallthrough
 	case "LIST":
@@ -194,7 +210,7 @@ func HandleCap(conn *Conn, msg *Message) {
 		// conn.HandleCapRequest(msg.Params[2]) // TODO: Capability request handler
 	case "END":
 		conn.capNegotiated = true
-		if conn.registered {
+		if conn.isRegistered() {
 			conn.ReplyWelcome()
 			conn.ReplyISupport()
 		}
@@ -211,8 +227,8 @@ func HandleCap(conn *Conn, msg *Message) {
 // sender's usermode. If all of the requirements are met, it sends
 // the message to the intended recpient.
 //
-//    Command: PRIVMSG
-//    Parameters: <target> :<text>
+//	Command: PRIVMSG
+//	Parameters: <target> :<text>
 func HandlePrivmsg(conn *Conn, msg *Message) {
 	doChatMessage(conn, msg)
 }
@@ -224,27 +240,27 @@ func HandlePrivmsg(conn *Conn, msg *Message) {
 // sender's usermode. If all of the requirements are met, it sends
 // the message to the intended recpient.
 //
-//    Command: NOTICE
-//    Parameters: <target> :<text>
+//	Command: NOTICE
+//	Parameters: <target> :<text>
 func HandleNotice(conn *Conn, msg *Message) {
 	doChatMessage(conn, msg)
 }
 
 func doChatMessage(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
-	if !enoughParams(msg, 1) || len(msg.Text) < 1 {
+	if !enoughParams(msg, 1) || len(msg.Text) == 0 {
 		conn.ReplyNeedMoreParams(msg.Command)
 		return
 	}
 
 	// TODO: Send Message permission check
 
-	targetuser, uerr := conn.server.Nicks.Get(strings.ToLower(msg.Params[0]))
-	targetchan, cerr := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
+	targetUser, userExists := conn.server.Nicks.Get(strings.ToLower(msg.Params[0]))
+	targetChannel, chanExists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
 
-	if uerr != nil && cerr != nil {
-		log.Debug("irc: Chat Message: did not find target")
+	if !userExists && !chanExists {
+		conn.logger.WithField("category", "chat message").Debug("did not find target")
 		conn.ReplyNoSuchNick(msg.Params[0])
 		return
 	}
@@ -252,10 +268,10 @@ func doChatMessage(conn *Conn, msg *Message) {
 	msg.Params = msg.Params[0:1] // Strip erroneous parameters.
 	msg.Sender = conn.user.Hostmask()
 
-	if targetuser != nil {
-		targetuser.conn.Write(msg.RenderBuffer())
+	if targetUser != nil {
+		targetUser.conn.Write(msg.RenderBuffer())
 	} else {
-		targetchan.Send(msg, conn.user.Nick())
+		targetChannel.Send(msg, conn.user.Nick())
 	}
 }
 
@@ -266,10 +282,10 @@ func doChatMessage(conn *Conn, msg *Message) {
 // channel members if the the user has sufficient permissions;
 // which are implied if the channel must first be created.
 //
-//    Command: JOIN
-//    Prameters: <channel>
+//	Command: JOIN
+//	Prameters: <channel>
 func HandleJoin(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
 	if !enoughParams(msg, 1) {
 		conn.ReplyNeedMoreParams(msg.Command)
@@ -279,17 +295,17 @@ func HandleJoin(conn *Conn, msg *Message) {
 	msg.Sender = conn.user.Hostmask()
 	msg.Params = msg.Params[0:1]
 
-	channel, err := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
+	channel, exists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
 
-	if err != nil {
+	if !exists {
 		channel = NewChannel(msg.Params[0], conn.user)
-		conn.server.Channels.Add(strings.ToLower(msg.Params[0]), channel)
+		conn.server.Channels.Set(strings.ToLower(msg.Params[0]), channel)
 	}
 
 	if !channel.Join(conn.user, msg) {
 		// TODO: channel join error
 	} else {
-		conn.channels.Add(channel.Name(), channel)
+		conn.channels.Set(channel.Name(), channel)
 		conn.ReplyChannelNames(channel)
 	}
 }
@@ -299,18 +315,17 @@ func HandleJoin(conn *Conn, msg *Message) {
 // The server will respond with the matching hostname of the requested nicks.
 // Limit 5
 //
-//    Command: USERHOST
-//    Parameters: <nickname1> [nickname2] [nickname3] [nickname4] [nickname5]
+//	Command: USERHOST
+//	Parameters: <nickname1> [nickname2] [nickname3] [nickname4] [nickname5]
 func HandleUserhost(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
-	hosts := []string{}
-
+	var hosts []string
 	var buffer bytes.Buffer
 
 	for _, nick := range msg.Params {
-		host, err := conn.server.Nicks.Get(strings.ToLower(nick))
-		if err != nil {
+		host, exists := conn.server.Nicks.Get(strings.ToLower(nick))
+		if !exists {
 			// TODO: Nick not fouind
 			conn.ReplyNoSuchNick(nick)
 			return
@@ -325,7 +340,7 @@ func HandleUserhost(conn *Conn, msg *Message) {
 
 	}
 
-	msg.Sender = conn.server.Hostname()
+	msg.Sender = conn.hostname
 	msg.Command = ""
 	msg.Code = ReplyUserHost
 	msg.Params = []string{conn.user.Nick()}
@@ -338,15 +353,13 @@ func HandleUserhost(conn *Conn, msg *Message) {
 //
 // The server will respond with the matching ping token.
 //
-//    Command: PING
-//    Parameters: :<token>
+//	Command: PING
+//	Parameters: :<token>
 func HandlePing(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
-	msg.Sender = conn.server.Hostname()
-
+	msg.Sender = conn.hostname
 	msg.Command = CmdPong
-
 	conn.Write(msg.RenderBuffer())
 }
 
@@ -355,15 +368,15 @@ func HandlePing(conn *Conn, msg *Message) {
 // Command: PONG
 // Parameters: :<token>
 func HandlePong(conn *Conn, msg *Message) {
-	defer msgpool.Recycle(msg)
+	defer msgPool.Recycle(msg)
 
-	if len(msg.Text) < 1 {
+	if len(msg.Text) == 0 {
 		conn.ReplyNeedMoreParams(msg.Command)
 		return
 	}
 
-	conn.Lock()
-	defer conn.Unlock()
+	conn.mu.Lock()
+	defer conn.mu.Unlock()
 	conn.lastPingRecv = msg.Text
 }
 
@@ -371,22 +384,14 @@ func HandlePong(conn *Conn, msg *Message) {
 // in which is designed to process the command.
 func RouteCommand(conn *Conn, msg *Message) {
 	handler, exists := Handlers[msg.Command]
-
 	if !exists {
 		conn.ReplyNotImplemented(msg.Command)
-		msgpool.Recycle(msg)
+		msgPool.Recycle(msg)
 		return
 	}
 
-	if !conn.registered {
-		if msg.Command != CmdPing &&
-			msg.Command != CmdPong &&
-			msg.Command != CmdCap &&
-			msg.Command != CmdPass &&
-			msg.Command != CmdNick &&
-			msg.Command != CmdUser &&
-			msg.Command != CmdQuit {
-
+	if !conn.isRegistered() {
+		if _, allowed := UnregAllowedCommands[msg.Command]; !allowed {
 			conn.ReplyNotRegistered()
 			return
 		}
@@ -406,7 +411,16 @@ func registerHandlers() {
 	Handlers[CmdPing] = HandlePing
 	Handlers[CmdPong] = HandlePong
 	Handlers[CmdJoin] = HandleJoin
+	Handlers[CmdCap] = HandleCap
 	Handlers[CmdPrivMsg] = HandlePrivmsg
 	Handlers[CmdNotice] = HandleNotice
 	Handlers[CmdUserhost] = HandleUserhost
+
+	UnregAllowedCommands[CmdPing] = struct{}{}
+	UnregAllowedCommands[CmdPong] = struct{}{}
+	UnregAllowedCommands[CmdCap] = struct{}{}
+	UnregAllowedCommands[CmdPass] = struct{}{}
+	UnregAllowedCommands[CmdNick] = struct{}{}
+	UnregAllowedCommands[CmdUser] = struct{}{}
+	UnregAllowedCommands[CmdQuit] = struct{}{}
 }

@@ -1,5 +1,5 @@
 /*
-   Copyright (c) 2020, btnmasher
+   Copyright (c) 2023, btnmasher
    All rights reserved.
 
    Redistribution and use in source and binary forms, with or without modification, are permitted provided that
@@ -21,6 +21,7 @@
    TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
    HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
    NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+   POSSIBILITY OF SUCH DAMAGE.
    POSSIBILITY OF SUCH DAMAGE.
 */
 
@@ -108,10 +109,11 @@ var UModeReqs = map[uint64]UModeReq{
 // If the mode is already present on the user, then this function will return
 // ErrModeAlreadySet
 func SetUserMode(umode uint64, setter, target *User) error {
-	setter.Lock()
-	target.Lock()
-	defer setter.Unlock()
-	defer target.Unlock()
+	setter.mu.Lock()
+	target.mu.Lock()
+	defer setter.mu.Unlock()
+	defer target.mu.Unlock()
+	// TODO: fix these exported mutexes or figure out a way to get the needed details first
 
 	reqs, exists := UModeReqs[umode]
 	if !exists {
@@ -122,10 +124,12 @@ func SetUserMode(umode uint64, setter, target *User) error {
 	// target has required permission to receive the mode, and if the
 	// setter has a higher permission than the target or if the target
 	// is also the setter.
-	if setter.perm >= reqs.Setter &&
-		target.perm >= reqs.Target &&
-		(setter.perm > target.perm ||
-			strings.ToLower(setter.nick) == strings.ToLower(target.nick)) {
+	canSet := setter.perm >= reqs.Setter
+	canReceive := target.perm >= reqs.Target
+	higherPerm := setter.perm > target.perm
+	sameUser := strings.ToLower(setter.nick) == strings.ToLower(target.nick)
+
+	if canSet && canReceive && (higherPerm || sameUser) {
 		if target.mode&umode == umode { // Check if mode flag already set
 			return ErrModeAlreadySet
 		}
@@ -153,10 +157,11 @@ func SetUserMode(umode uint64, setter, target *User) error {
 // If the mode is not already present on the user, then this function will return
 // ErrModeNotSet
 func UnsetUserMode(umode uint64, setter, target *User) error {
-	setter.Lock()
-	target.Lock()
-	defer setter.Unlock()
-	defer target.Unlock()
+	setter.mu.Lock()
+	target.mu.Lock()
+	defer setter.mu.Unlock()
+	defer target.mu.Unlock()
+	// TODO: figure out these exported mutexes
 
 	reqs, exists := UModeReqs[umode]
 	if !exists {

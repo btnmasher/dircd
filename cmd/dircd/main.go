@@ -1,36 +1,64 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/sourcegraph/conc"
+
 	irc "github.com/btnmasher/dircd"
 
 	"github.com/sirupsen/logrus"
-	prefixed "github.com/x-cray/logrus-prefixed-formatter"
 )
 
-var log = logrus.New()
-
-func init() {
-
-	formatter := &prefixed.TextFormatter{
-		ForceColors:      true,
-		DisableSorting:   true,
-		QuoteEmptyFields: true,
-		FullTimestamp:    true,
-	}
-
-	log.SetFormatter(formatter)
-	log.SetLevel(logrus.DebugLevel)
-
-	irc.Warmup(log)
-}
-
 func main() {
+	wg := conc.NewWaitGroup()
+	defer wg.Wait()
+
+	mainContext, shutdown := context.WithCancel(context.Background())
+	defer shutdown()
+
+	shutdownTimeout := 30 * time.Second
+	logger := logrus.New()
+	//logger.SetReportCaller(true)
 
 	// Setup server and start
-	server := irc.NewServer()
-	server.SetHostname("irc.localhost.net")
-	server.SetNetwork("dircd.net")
+	server, cfgErr := irc.NewServer(
+		irc.WithHostname("irc.localhost.net"),
+		irc.WithNetwork("dircd.net"),
+		irc.WithLogger(logger),
+		irc.WithLogLevel(logrus.DebugLevel),
+		irc.WithDefaultLogFormatter(),
+		irc.WithGracefulShutdown(mainContext, shutdownTimeout),
+	)
+	if cfgErr != nil {
+		logger.Fatal(cfgErr)
+	}
+	wg.Go(func() {
+		//server.ListenAndServeTLS("server.pem", "server.key")
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, irc.ErrServerClosed) {
+			logger.Fatal(fmt.Errorf("failed to start server: %w", err))
+		}
+	})
 
-	//server.ListenAndServeTLS("server.pem", "server.key")
-	server.ListenAndServe()
+	waitForTermination(logger)
+}
+
+func waitForTermination(logger *logrus.Logger) {
+	log := logger.WithField("component", "main")
+	killSignals := make(chan os.Signal, 1)
+	signal.Notify(killSignals, syscall.SIGINT, syscall.SIGTERM)
+
+	sig := <-killSignals
+
+	go func() {
+		log.Infof("initializing server shutdown, received signal: %s", sig)
+		sig = <-killSignals
+		log.Fatalf("forcefully shutting down server, received signal: %s", sig)
+	}()
 }

@@ -24,55 +24,12 @@
    POSSIBILITY OF SUCH DAMAGE.
 */
 
-package dircd
+package sliceutils
 
-// Command constants.
-const (
-	// RFC 1459
-	CmdPrivMsg  string = "PRIVMSG"
-	CmdNotice          = "NOTICE"
-	CmdUserhost        = "USERHOST"
-	CmdPass            = "PASS"
-	CmdPing            = "PING"
-	CmdPong            = "PONG"
-	CmdTopic           = "TOPIC"
-	CmdJoin            = "JOIN"
-	CmdPart            = "PART"
-	CmdKick            = "KICK"
-	CmdQuit            = "QUIT"
-	CmdNick            = "NICK"
-	CmdUser            = "USER"
-	CmdMode            = "MODE"
-	CmdWallops         = "WALLOPS"
-	CmdInvite          = "INVITE"
-	CmdKill            = "KILL"
-
-	// CTCP
-	CmdCTCPPing       = "CTCP PING"
-	CmdCTCPVersion    = "CTCP VERSION"
-	CmdCTCPSource     = "CTCP SOURCE"
-	CmdCTCPTime       = "CTCP TIME"
-	CmdCTCPUserInfo   = "CTCP USERINFO"
-	CmdCTCPClientInfo = "CTCP CLIENTINFO"
-	CmdCTCPError      = "CTCP ERRMSG"
-	CmdCTCPFinger     = "CTCP FINGER"
-	CmdCTCPAction     = "CTCP ACTION"
-
-	// IRCv3 Base
-	CmdCap      = "CAP"
-	CmdCapLs    = "CAP LS"
-	CmdCapList  = "CAP LIST"
-	CmdCapReq   = "CAP REQ"
-	CmdCapAck   = "CAP ACK"
-	CmdCapNak   = "CAP NAK"
-	CmdCapEnd   = "CAP END"
-	CmdAuth     = "AUTHENTICATE"
-	CmdMetadata = "METADATA"
-	CmdError    = "ERROR"
-
-	// IRCv3 account-notify
-	CmdAccount = "ACCOUNT"
-
-	// IRCv3 away-notify
-	CmdAway = "AWAY"
-)
+func ChunkBy[T any](items []T, chunkSize int) [][]T {
+	var _chunks = make([][]T, 0, (len(items)/chunkSize)+1)
+	for chunkSize < len(items) {
+		items, _chunks = items[chunkSize:], append(_chunks, items[0:chunkSize:chunkSize])
+	}
+	return append(_chunks, items)
+}
