@@ -1,27 +1,8 @@
 /*
    Copyright (c) 2023, btnmasher
    All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without modification, are permitted provided that
-   the following conditions are met:
-
-   1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
-      following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
-      the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-   3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or
-      promote products derived from this software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
-   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-   TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-   POSSIBILITY OF SUCH DAMAGE.
+   Use of this source code is governed by a BSD-style
+   license that can be found in the LICENSE file.
 */
 
 package dircd
@@ -54,7 +35,7 @@ type MessageHandler func(*Conn, *Message)
 //	Parameters: :<reason>
 func HandleQuit(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(msg)
-	conn.doQuit(msg.Text)
+	conn.doQuit(msg.Trailing)
 }
 
 // HandleNick processes a NICK command.
@@ -73,7 +54,7 @@ func HandleNick(conn *Conn, msg *Message) {
 	logger := conn.logger.WithField("handler", "NICK")
 
 	if !enoughParams(msg, 1) {
-		msg.Params = strings.Fields(msg.Text) // Some dumb ass clients don't follow the spec and add the nickname to the text field (mIRC)
+		msg.Params = strings.Fields(msg.Trailing) // Some dumb ass clients don't follow the spec and add the nickname to the text field (mIRC)
 		if !enoughParams(msg, 1) {
 			conn.ReplyNoNicknameGiven()
 			return
@@ -85,20 +66,20 @@ func HandleNick(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(reply)
 
 	if conn.user.Nick() == msg.Params[0] {
-		reply.Text = ErrNickAlreadySet.String()
+		reply.Trailing = ErrNickAlreadySet.String()
 		reply.Code = ReplyNicknameInUse
 		conn.Write(reply.RenderBuffer())
 		return
 	}
 
 	if validationErr, code := conn.server.ValidateName(msg.Params[0]); validationErr != nil {
-		reply.Text = validationErr.Error()
+		reply.Trailing = validationErr.Error()
 		reply.Code = code
 		conn.Write(reply.RenderBuffer())
 		return
 	}
 
-	reply.Sender = conn.user.Hostmask()
+	reply.Source = conn.user.Hostmask()
 	oldNick := conn.user.Nick()
 	newNick := msg.Params[0]
 	conn.user.SetNick(newNick)
@@ -110,7 +91,7 @@ func HandleNick(conn *Conn, msg *Message) {
 	reply.Code = ReplyNone
 	reply.Command = CmdNick
 	reply.Params = msg.Params[0:1]
-	reply.Text = ""
+	reply.Trailing = ""
 
 	conn.Write(reply.RenderBuffer())
 
@@ -155,13 +136,13 @@ func HandleUser(conn *Conn, msg *Message) {
 	reply.Code = ReplyAlreadyRegistered
 
 	if len(conn.user.Name()) > 0 {
-		reply.Text = ErrUserAreadySet.String()
+		reply.Trailing = ErrUserAreadySet.String()
 		conn.Write(reply.RenderBuffer())
 		return
 	}
 
 	if conn.server.Users.Exists(msg.Params[0]) {
-		reply.Text = ErrUserInUse.String()
+		reply.Trailing = ErrUserInUse.String()
 		conn.Write(reply.RenderBuffer())
 		return
 	}
@@ -175,7 +156,7 @@ func HandleUser(conn *Conn, msg *Message) {
 	// - reserved names
 
 	conn.user.SetName(msg.Params[0])
-	conn.user.SetRealname(msg.Text)
+	conn.user.SetRealname(msg.Trailing)
 	conn.user.SetHostname(conn.remAddr)
 	conn.registerUser()
 
@@ -249,7 +230,7 @@ func HandleNotice(conn *Conn, msg *Message) {
 func doChatMessage(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(msg)
 
-	if !enoughParams(msg, 1) || len(msg.Text) == 0 {
+	if !enoughParams(msg, 1) || len(msg.Trailing) == 0 {
 		conn.ReplyNeedMoreParams(msg.Command)
 		return
 	}
@@ -266,7 +247,7 @@ func doChatMessage(conn *Conn, msg *Message) {
 	}
 
 	msg.Params = msg.Params[0:1] // Strip erroneous parameters.
-	msg.Sender = conn.user.Hostmask()
+	msg.Source = conn.user.Hostmask()
 
 	if targetUser != nil {
 		targetUser.conn.Write(msg.RenderBuffer())
@@ -292,7 +273,7 @@ func HandleJoin(conn *Conn, msg *Message) {
 		return
 	}
 
-	msg.Sender = conn.user.Hostmask()
+	msg.Source = conn.user.Hostmask()
 	msg.Params = msg.Params[0:1]
 
 	channel, exists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
@@ -340,11 +321,11 @@ func HandleUserhost(conn *Conn, msg *Message) {
 
 	}
 
-	msg.Sender = conn.hostname
+	msg.Source = conn.hostname
 	msg.Command = ""
 	msg.Code = ReplyUserHost
 	msg.Params = []string{conn.user.Nick()}
-	msg.Text = strings.Join(hosts, " ")
+	msg.Trailing = strings.Join(hosts, " ")
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -358,7 +339,7 @@ func HandleUserhost(conn *Conn, msg *Message) {
 func HandlePing(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(msg)
 
-	msg.Sender = conn.hostname
+	msg.Source = conn.hostname
 	msg.Command = CmdPong
 	conn.Write(msg.RenderBuffer())
 }
@@ -370,14 +351,14 @@ func HandlePing(conn *Conn, msg *Message) {
 func HandlePong(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(msg)
 
-	if len(msg.Text) == 0 {
+	if len(msg.Trailing) == 0 {
 		conn.ReplyNeedMoreParams(msg.Command)
 		return
 	}
 
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
-	conn.lastPingRecv = msg.Text
+	conn.lastPingRecv = msg.Trailing
 }
 
 // RouteCommand accepts an IRC message and routes it to a function

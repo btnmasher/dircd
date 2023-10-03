@@ -1,27 +1,8 @@
 /*
    Copyright (c) 2023, btnmasher
    All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without modification, are permitted provided that
-   the following conditions are met:
-
-   1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
-      following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
-      the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-   3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or
-      promote products derived from this software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
-   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-   TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-   POSSIBILITY OF SUCH DAMAGE.
+   Use of this source code is governed by a BSD-style
+   license that can be found in the LICENSE file.
 */
 
 package dircd
@@ -35,18 +16,28 @@ import (
 
 // Message is an object that represents the components of an IRC message.
 type Message struct {
-	Text    string   // The portion of the message after the prefix and command.
-	Sender  string   // The sender parameter of the message.
-	Params  []string // The person of the message after prefix and command in array form.
-	Command string   // The IRC string command of the message.
-	Code    uint16   // The IRC numeric code of the message.
+	Tags map[string]string `json:"tags"`
+
+	Source   string   `json:"sender"`   // The sender parameter of the message.
+	Command  string   `json:"command"`  // The IRC string command of the message.
+	Code     uint16   `json:"code"`     // The IRC numeric code of the message (substituted as the command when replying).
+	Params   []string `json:"params"`   // The person of the message after prefix and command in array form.
+	Trailing string   `json:"trailing"` // The final parameter of a message, may contain spaces (eg: text of a PRIVMSG)
 }
 
 // Message represents an IRC protocol message.
-// See RFC1459 section 2.3.1.
 //
-//    <message>  = [':' <prefix> <SPACE> ] <command> <params> <crlf>
-//    <prefix>   = <servername> | <nick> [ '!' <user> ] [ '@' <host> ]
+//    <message>  = ['@' <tags> SPACE] [':' <source> <SPACE> ] <command> <params> <crlf>
+//
+//    <tags>          ::= <tag> [';' <tag>]*
+//    <tag>           ::= <key> ['=' <escaped value>]
+//    <key>           ::= [ <client_prefix> ] [ <vendor> '/' ] <sequence of letters, digits, hyphens (`-`)>
+//    <client_prefix> ::= '+'
+//    <escaped value> ::= <sequence of any characters except NUL, CR, LF, semicolon (`;`) and SPACE>
+//    <vendor>        ::= <host>
+//
+//    <source>   = <servername> | <nick> [ '!' <user> ] [ '@' <host> ]
+//
 //    <command>  = <letter> { <letter> } | <number> <number> <number>
 //    <SPACE>    = ' ' { ' ' }
 //    <params>   = <SPACE> [ ':' <trailing> | <middle> <params> ]
@@ -60,11 +51,23 @@ type Message struct {
 
 // String constants for constructing the message
 const (
-	SPACE  string = " "
-	CRLF          = "\r\n"
-	COLON         = ":"
-	EMPTY         = ""
-	PADNUM        = "%03d"
+	SPACE        string = " "
+	EMPTY               = ""
+	PADNUM              = "%03d"
+	AT                  = "@"
+	EQUAL               = "="
+	COLON               = ":"
+	SEMICOLON           = ";"
+	ESCSEMICOLON        = "\\:"
+	BACKSLAH            = "\\"
+	ESCBACKSLASH        = "\\\\"
+	CRLF                = "\r\n"
+	ESCCRLF             = "\\r\\n"
+	CR                  = "\r"
+	ESCCR               = "\\r"
+	LF                  = "\n"
+	ESCLF               = "\\n"
+	ESCSPACE            = "\\s"
 )
 
 func NewMessage() *Message {
@@ -81,9 +84,21 @@ func (msg *Message) String() string {
 func (msg *Message) RenderBuffer() *bytes.Buffer {
 	buffer := bufPool.New()
 
-	if msg.Sender != EMPTY {
+	if len(msg.Tags) > 0 {
+		buffer.WriteString(AT)
+		for key, value := range msg.Tags {
+			buffer.WriteString(escapeTagString(key))
+			buffer.WriteString(EQUAL)
+			buffer.WriteString(escapeTagString(value))
+			buffer.WriteString(SEMICOLON)
+		}
+		buffer.Truncate(buffer.Len() - 1) // remove trailing ";"
+		buffer.WriteString(SPACE)
+	}
+
+	if msg.Source != EMPTY {
 		buffer.WriteString(COLON)
-		buffer.WriteString(msg.Sender)
+		buffer.WriteString(msg.Source)
 		buffer.WriteString(SPACE)
 	}
 
@@ -94,18 +109,18 @@ func (msg *Message) RenderBuffer() *bytes.Buffer {
 	}
 
 	if len(msg.Params) > 0 {
-		if len(msg.Params) > 14 {
-			msg.Params = msg.Params[0:15]
+		if len(msg.Params) > MaxMsgParams {
+			msg.Params = msg.Params[0:MaxMsgParams]
 		}
 
 		buffer.WriteString(SPACE)
 		buffer.WriteString(strings.Join(msg.Params, SPACE))
 	}
 
-	if msg.Text != EMPTY {
+	if msg.Trailing != EMPTY {
 		buffer.WriteString(SPACE)
 		buffer.WriteString(COLON)
-		buffer.WriteString(msg.Text)
+		buffer.WriteString(msg.Trailing)
 	}
 
 	buffer.WriteString(CRLF)
@@ -121,14 +136,25 @@ func (msg *Message) Render() string {
 
 // Debug prints a message object to a string with verbose information about the object fields.
 func (msg *Message) Debug() string {
-	data, _ := json.Marshal(msg) // Ignoring the error because it literally can't happen.
+	data, _ := json.Marshal(msg)
 	return string(data)
 }
 
 func (msg *Message) Scrub() {
-	msg.Code = 0
+	clear(msg.Tags)
+	msg.Source = ""
 	msg.Command = ""
-	msg.Sender = ""
-	msg.Text = ""
+	msg.Code = 0
 	msg.Params = nil
+	msg.Trailing = ""
+}
+
+func escapeTagString(str string) string {
+	// Escape tag value
+	escapedValue := strings.ReplaceAll(str, SEMICOLON, ESCSEMICOLON)
+	escapedValue = strings.ReplaceAll(escapedValue, SPACE, ESCSPACE)
+	escapedValue = strings.ReplaceAll(escapedValue, BACKSLAH, ESCBACKSLASH)
+	escapedValue = strings.ReplaceAll(escapedValue, CR, ESCCR)
+	escapedValue = strings.ReplaceAll(escapedValue, LF, ESCLF)
+	return escapedValue
 }

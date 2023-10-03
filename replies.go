@@ -1,27 +1,8 @@
 /*
    Copyright (c) 2023, btnmasher
    All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without modification, are permitted provided that
-   the following conditions are met:
-
-   1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
-      following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
-      the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-   3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or
-      promote products derived from this software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
-   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-   TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-   POSSIBILITY OF SUCH DAMAGE.
+   Use of this source code is governed by a BSD-style
+   license that can be found in the LICENSE file.
 */
 
 package dircd
@@ -40,7 +21,7 @@ func (conn *Conn) ReplyWelcome() {
 
 	msg.Code = ReplyWelcome
 	msg.Params = []string{conn.user.Nick()}
-	msg.Text = conn.server.Welcome()
+	msg.Trailing = conn.server.Welcome()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -66,7 +47,7 @@ func (conn *Conn) ReplyInvalidCapCommand(cmd string) {
 
 	msg.Code = ReplyInvalidCapCmd
 	msg.Params = params
-	msg.Text = ErrInvalidCapCmd.Error()
+	msg.Trailing = ErrInvalidCapCmd.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -93,7 +74,7 @@ func (conn *Conn) ReplyNeedMoreParams(cmd string) {
 
 	msg.Code = ReplyNeedMoreParams
 	msg.Params = params
-	msg.Text = ErrMissingParams.Error()
+	msg.Trailing = ErrMissingParams.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -113,7 +94,7 @@ func (conn *Conn) ReplyNoNicknameGiven() {
 
 	msg.Params = []string{nick}
 	msg.Code = ReplyNoNicknameGiven
-	msg.Text = ErrNoNickGiven.Error()
+	msg.Trailing = ErrNoNickGiven.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -128,7 +109,7 @@ func (conn *Conn) ReplyNoSuchNick(nick string) {
 
 	msg.Params = []string{conn.user.Nick(), nick}
 	msg.Code = ReplyNoSuchNick
-	msg.Text = ErrNoSuchNick.Error()
+	msg.Trailing = ErrNoSuchNick.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -143,7 +124,7 @@ func (conn *Conn) ReplyNoSuchChan(channel string) {
 
 	msg.Params = []string{conn.user.Nick(), channel}
 	msg.Code = ReplyNoSuchChannel
-	msg.Text = ErrNoSuchChan.Error()
+	msg.Trailing = ErrNoSuchChan.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -157,7 +138,7 @@ func (conn *Conn) ReplyNotImplemented(cmd string) {
 
 	msg.Code = ReplyUnknownCommand
 	msg.Params = []string{conn.user.Nick(), cmd}
-	msg.Text = ErrNotImplemented.Error()
+	msg.Trailing = ErrNotImplemented.Error()
 
 	conn.logger.Warnf("command not implemented encountered for: %s", cmd)
 
@@ -179,7 +160,7 @@ func (conn *Conn) ReplyNotRegistered() {
 
 	msg.Code = ReplyNotRegistered
 	msg.Params = []string{nick}
-	msg.Text = ErrNotRegistered.Error()
+	msg.Trailing = ErrNotRegistered.Error()
 
 	conn.Write(msg.RenderBuffer())
 }
@@ -192,7 +173,7 @@ func (conn *Conn) ReplyChannelTopic(channel *Channel) {
 
 	msg.Code = ReplyChanTopic
 	msg.Params = []string{conn.user.Nick(), channel.Name()}
-	msg.Text = channel.Topic()
+	msg.Trailing = channel.Topic()
 	conn.Write(msg.RenderBuffer())
 }
 
@@ -217,14 +198,14 @@ func (conn *Conn) ReplyChannelNames(channel *Channel) {
 		msg := conn.newMessage()
 		msg.Code = ReplyNames
 		msg.Params = params
-		msg.Text = line
+		msg.Trailing = line
 		messages = append(messages, msg)
 	}
 
 	end := conn.newMessage()
 	end.Code = ReplyEndOfNames
 	end.Params = []string{userNick, channelName}
-	end.Text = "End of NAMES list."
+	end.Trailing = "End of NAMES list."
 	messages = append(messages, end)
 
 	defer func() {

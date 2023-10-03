@@ -1,27 +1,8 @@
 /*
    Copyright (c) 2023, btnmasher
    All rights reserved.
-
-   Redistribution and use in source and binary forms, with or without modification, are permitted provided that
-   the following conditions are met:
-
-   1. Redistributions of source code must retain the above copyright notice, this list of conditions and the
-      following disclaimer.
-
-   2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and
-      the following disclaimer in the documentation and/or other materials provided with the distribution.
-
-   3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or
-      promote products derived from this software without specific prior written permission.
-
-   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED
-   WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-   PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
-   ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
-   TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-   HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
-   NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-   POSSIBILITY OF SUCH DAMAGE.
+   Use of this source code is governed by a BSD-style
+   license that can be found in the LICENSE file.
 */
 
 package dircd
@@ -374,7 +355,7 @@ func (conn *Conn) doHeartbeat() {
 	str := random.String(10)
 	msg := msgPool.New()
 	msg.Command = CmdPing
-	msg.Text = str
+	msg.Trailing = str
 	conn.lastPingSent = str
 	conn.heartbeat.Reset(pingTimeout)
 	conn.Write(msg.RenderBuffer())
@@ -393,16 +374,16 @@ func (conn *Conn) doKill(reason, source string) {
 	if !conn.isClosed() {
 		reply := conn.newMessage()
 		reply.Command = CmdError
-		reply.Text = fmt.Sprintf("Closing link: %s [Killed: [%s [%s]]]", conn.server.Hostname(), source, reason)
+		reply.Trailing = fmt.Sprintf("Closing link: %s [Killed: [%s [%s]]]", conn.server.Hostname(), source, reason)
 		conn.Write(reply.RenderBuffer())
 	}
 
 	if conn.channels.Length() > 0 && conn.isRegistered() {
 		logger.Debug("quitting user from joined channels")
 		msg := msgPool.New()
-		msg.Sender = conn.user.Hostmask()
+		msg.Source = conn.user.Hostmask()
 		msg.Command = CmdQuit
-		msg.Text = fmt.Sprintf("Killed: [%s [%s]]", source, reason)
+		msg.Trailing = fmt.Sprintf("Killed: [%s [%s]]", source, reason)
 		nick := conn.user.Nick()
 		chanErr := conn.channels.ForEach(func(name string, channel *Channel) error {
 			return channel.RemoveUser(nick, msg)
@@ -431,16 +412,16 @@ func (conn *Conn) doQuit(reason string) {
 	if !conn.isClosed() {
 		reply := conn.newMessage()
 		reply.Command = CmdError
-		reply.Text = fmt.Sprintf("Closing link: %s [Quit: %s]", conn.user.Hostmask(), reason)
+		reply.Trailing = fmt.Sprintf("Closing link: %s [Quit: %s]", conn.user.Hostmask(), reason)
 		conn.write(reply.RenderBuffer())
 		conn.shuttingDown.Store(true)
 	}
 
 	if conn.channels.Length() > 0 && conn.isRegistered() {
 		msg := msgPool.New()
-		msg.Sender = conn.user.Hostmask()
+		msg.Source = conn.user.Hostmask()
 		msg.Command = CmdQuit
-		msg.Text = reason
+		msg.Trailing = reason
 
 		nick := conn.user.Nick()
 		chanErr := conn.channels.ForEach(func(name string, channel *Channel) error {
@@ -503,7 +484,7 @@ func (conn *Conn) setDeadlines() {
 func (conn *Conn) newMessage() *Message {
 	msg := msgPool.New()
 
-	msg.Sender = conn.hostname
+	msg.Source = conn.hostname
 
 	return msg
 }
