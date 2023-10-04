@@ -9,24 +9,27 @@ package dircd
 
 // Command constants.
 const (
+	// For use with command handler middlewares
+	CmdAny = "*"
+
 	// RFC 1459
-	CmdPrivMsg  string = "PRIVMSG"
-	CmdNotice          = "NOTICE"
-	CmdUserhost        = "USERHOST"
-	CmdPass            = "PASS"
-	CmdPing            = "PING"
-	CmdPong            = "PONG"
-	CmdTopic           = "TOPIC"
-	CmdJoin            = "JOIN"
-	CmdPart            = "PART"
-	CmdKick            = "KICK"
-	CmdQuit            = "QUIT"
-	CmdNick            = "NICK"
-	CmdUser            = "USER"
-	CmdMode            = "MODE"
-	CmdWallops         = "WALLOPS"
-	CmdInvite          = "INVITE"
-	CmdKill            = "KILL"
+	CmdPrivMsg  = "PRIVMSG"
+	CmdNotice   = "NOTICE"
+	CmdUserhost = "USERHOST"
+	CmdPass     = "PASS"
+	CmdPing     = "PING"
+	CmdPong     = "PONG"
+	CmdTopic    = "TOPIC"
+	CmdJoin     = "JOIN"
+	CmdPart     = "PART"
+	CmdKick     = "KICK"
+	CmdQuit     = "QUIT"
+	CmdNick     = "NICK"
+	CmdUser     = "USER"
+	CmdMode     = "MODE"
+	CmdWallops  = "WALLOPS"
+	CmdInvite   = "INVITE"
+	CmdKill     = "KILL"
 
 	// CTCP
 	CmdCTCPPing       = "CTCP PING"

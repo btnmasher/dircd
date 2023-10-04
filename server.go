@@ -46,27 +46,28 @@ var bufPool = util.NewBufferPool(bufferPoolMax)
 
 // Server holds the state of an IRC server instance.
 type Server struct {
-	mu  sync.Mutex
-	rwm sync.RWMutex
 
+	// Configuration
+	hostname     string
+	motd         string
+	welcome      string
 	logger       *logrus.Entry
 	logLevel     logrus.Level
 	logFormatter logrus.Formatter
-	listener     net.Listener
-
-	// Configuration
-	listenAddr *net.TCPAddr
-	hostname   string
-	motd       string
-	welcome    string
-	support    concurrentmap.ConcurrentMap[string, string]
-	tlsConfig  *tls.Config
+	support      concurrentmap.ConcurrentMap[string, string]
+	listenAddr   *net.TCPAddr
+	tlsConfig    *tls.Config
 
 	// Active State
 	Users    UserMap
 	Nicks    UserMap
 	Channels ChanMap
+	Router   *Router
 
+	// Synchronization
+	mu              sync.Mutex
+	rwm             sync.RWMutex
+	listener        net.Listener
 	listeners       map[*net.Listener]struct{}
 	activeConn      map[*Conn]struct{}
 	onShutdown      []func()
@@ -119,13 +120,15 @@ func NewServer(options ...ServerOption) (*Server, error) {
 		server.logger.Logger.SetLevel(server.logLevel)
 	}
 
+	server.Router = NewRouter(server.logger)
+
 	return server, nil
 }
 
 func (srv *Server) warmup() {
 	logger := srv.logger.WithField("operation", "warmup")
 	logger.Info("registering message handlers")
-	registerHandlers()
+	srv.registerHandlers()
 
 	logger.Info("populating ISupport")
 	srv.populateISupport()
@@ -361,6 +364,26 @@ func (srv *Server) populateISupport() {
 	srv.support.Set("kicklen", fmt.Sprint(MaxKickLength))
 	srv.support.Set("chanlen", fmt.Sprint(MaxChanLength))
 	srv.support.Set("awaylen", fmt.Sprint(MaxAwayLength))
+}
+
+func (srv *Server) registerHandlers() {
+	srv.Router.Handle(CmdPing, HandlePing)
+	srv.Router.Handle(CmdPong, HandlePong)
+	srv.Router.Handle(CmdCap, HandleCap)
+	srv.Router.Handle(CmdNick, HandleNick)
+	srv.Router.Handle(CmdUser, HandleUser)
+	srv.Router.Handle(CmdQuit, HandleQuit)
+	//srv.Router.Handle(CmdPass, HandlePass)
+
+	registered := srv.Router.Group(MustBeRegistered)
+	{
+		registered.Handle(CmdJoin, HandleJoin)
+		registered.Handle(CmdPrivMsg, HandlePrivmsg)
+		registered.Handle(CmdNotice, HandleNotice)
+		registered.Handle(CmdUserhost, HandleUserhost)
+	}
+
+	srv.Router.PrintHandlers()
 }
 
 func (srv *Server) shuttingDown() bool {

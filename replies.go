@@ -139,9 +139,6 @@ func (conn *Conn) ReplyNotImplemented(cmd string) {
 	msg.Code = ReplyUnknownCommand
 	msg.Params = []string{conn.user.Nick(), cmd}
 	msg.Trailing = ErrNotImplemented.Error()
-
-	conn.logger.Warnf("command not implemented encountered for: %s", cmd)
-
 	conn.Write(msg.RenderBuffer())
 }
 

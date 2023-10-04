@@ -72,13 +72,8 @@ func Parse(line string) (*Message, error) {
 	}
 
 	if len(args) > 1 {
-		if len(msg.Trailing) == 0 && len(args) > 2 {
-			//No text from the split, use the last argument as the text field, as it might still be a valid
-			msg.Trailing = args[len(args)-1]
-			msg.Params = args[1 : len(args)-1]
-		} else {
-			msg.Params = args[1:]
-		}
+		msg.Params = args[1:]
+		msg.Trailing = args[len(args)-1]
 
 		if len(msg.Params) > MaxMsgParams {
 			msgPool.Recycle(msg)

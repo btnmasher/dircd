@@ -136,9 +136,9 @@ func (conn *Conn) getState() (state ConnState, unixSec int64) {
 }
 
 func serve(conn *Conn) {
+	logger := conn.logger.WithField("category", "serve")
 	defer conn.cleanup()
 	conn.start()
-	logger := conn.logger.WithField("category", "serve")
 	logger.Info("client connection established")
 
 	recovered := panics.Try(func() {
@@ -166,12 +166,6 @@ func serve(conn *Conn) {
 
 	panicErr := recovered.AsError()
 	if panicErr != nil {
-		defer func() {
-			closeErr := conn.sock.Close()
-			if closeErr != nil {
-				logger.Error(fmt.Errorf("error occurred closing socket: %w", closeErr))
-			}
-		}()
 		logger.Errorf(panicLogTemplate, recovered.String())
 		conn.cancel(fmt.Errorf("panic occurred during serve: %w", panicErr))
 		conn.doQuit("Socket Error.")
@@ -247,10 +241,7 @@ func (conn *Conn) readLoop() {
 						}
 					}
 
-					logger.Debug("line reader completed, closing socket")
-					if closeErr := conn.sock.Close(); closeErr != nil {
-						logger.Error(fmt.Errorf("encountered error attempting to close socket: %w", closeErr))
-					}
+					logger.Debug("line reader completed, closing connection")
 					conn.setState(StateClosed)
 				}()
 				return
@@ -261,13 +252,14 @@ func (conn *Conn) readLoop() {
 
 			msg, parseErr := Parse(data)
 			if parseErr != nil {
+				msgPool.Recycle(msg)
 				logger.Warn(fmt.Errorf("error parsing message from client: %w", parseErr))
 				continue
 			}
 
 			conn.heartbeat.Reset(pingTimeout)
 
-			RouteCommand(conn, msg)
+			conn.server.Router.RouteCommand(conn, msg)
 		}
 	}
 }
@@ -361,6 +353,33 @@ func (conn *Conn) doHeartbeat() {
 	conn.Write(msg.RenderBuffer())
 }
 
+func (conn *Conn) doChatMessage(msg *Message) {
+	if !enoughParams(msg, 1) || len(msg.Trailing) == 0 {
+		conn.ReplyNeedMoreParams(msg.Command)
+		return
+	}
+
+	// TODO: Send Message permission check
+
+	targetUser, userExists := conn.server.Nicks.Get(strings.ToLower(msg.Params[0]))
+	targetChannel, chanExists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
+
+	if !userExists && !chanExists {
+		conn.logger.WithField("category", "chat message").Debug("did not find target")
+		conn.ReplyNoSuchNick(msg.Params[0])
+		return
+	}
+
+	msg.Params = msg.Params[0:1] // Strip erroneous parameters.
+	msg.Source = conn.user.Hostmask()
+
+	if targetUser != nil {
+		targetUser.conn.Write(msg.RenderBuffer())
+	} else {
+		targetChannel.Send(msg, conn.user.Nick())
+	}
+}
+
 func (conn *Conn) doKill(reason, source string) {
 	logger := conn.logger.WithField("operation", "quit")
 	if source == "" {
@@ -451,13 +470,19 @@ func (conn *Conn) registerUser() {
 }
 
 func (conn *Conn) cleanup() {
+	defer func() {
+		closeErr := conn.sock.Close()
+		if closeErr != nil {
+			conn.logger.Error(fmt.Errorf("error occurred closing socket: %w", closeErr))
+		}
+	}()
+	conn.setState(StateClosed)
 	conn.logger.Debug("cleaning up connection state from server")
 	name := conn.user.Name()
 	nick := conn.user.Nick()
 	conn.server.Users.Delete(name)
 	conn.server.Nicks.Delete(nick)
 	conn.logger.Debugf("cleaned up user: %s - %s", name, nick)
-	conn.setState(StateClosed)
 }
 
 // writeTimeout sets the write timeout duration on the client IRC connections.
