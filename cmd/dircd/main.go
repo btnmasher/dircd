@@ -24,11 +24,11 @@ import (
 )
 
 func main() {
-	wg := conc.NewWaitGroup()
-	defer wg.Wait()
-
 	mainContext, shutdown := context.WithCancel(context.Background())
 	defer shutdown()
+
+	wg := conc.NewWaitGroup()
+	defer wg.Wait()
 
 	shutdownTimeout := 30 * time.Second
 	logger := logrus.New()
@@ -53,18 +53,14 @@ func main() {
 		}
 	})
 
-	waitForTermination(logger)
-}
-
-func waitForTermination(logger *logrus.Logger) {
 	log := logger.WithField("component", "main")
 	killSignals := make(chan os.Signal, 1)
 	signal.Notify(killSignals, syscall.SIGINT, syscall.SIGTERM)
 
-	sig := <-killSignals
-
 	go func() {
+		sig := <-killSignals
 		log.Infof("initializing server shutdown, received signal: %s", sig)
+		shutdown()
 		sig = <-killSignals
 		log.Fatalf("forcefully shutting down server, received signal: %s", sig)
 	}()
