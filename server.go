@@ -96,6 +96,8 @@ func NewServer(options ...ServerOption) (*Server, error) {
 		support:  concurrentmap.New[string, string](),
 	}
 
+	server.registerOnShutdown(server.broadcastShutdownNotice)
+
 	var optionErrors error
 	for i := range options {
 		err := options[i].apply(server)
@@ -135,6 +137,18 @@ func (srv *Server) warmup() {
 
 	logger.Info("warming up message pool")
 	msgPool.Warmup(messagePoolMax)
+}
+
+func (srv *Server) broadcastShutdownNotice() {
+	msg := msgPool.New()
+	msg.Source = srv.hostname
+	msg.Command = CmdNotice
+	msg.Trailing = "The server is shutting down soon"
+
+	srv.Users.ForEach(func(_ string, user *User) error {
+		user.conn.Write(msg.RenderBuffer())
+		return nil
+	})
 }
 
 // Network returns the configured network name of the server in a concurrent safe manner
@@ -316,6 +330,13 @@ func WithGracefulShutdown(ctx context.Context, shutdownTimeout time.Duration) Se
 	})
 }
 
+func WithOnShutdownHook(hook func()) ServerOption {
+	return option(func(s *Server) error {
+		s.registerOnShutdown(hook)
+		return nil
+	})
+}
+
 func waitTimeout(wg *conc.WaitGroup, timeout time.Duration) bool {
 	c := make(chan struct{})
 	go func() {
@@ -390,6 +411,12 @@ func (srv *Server) shuttingDown() bool {
 	return srv.inShutdown.Load()
 }
 
+func (srv *Server) registerOnShutdown(f func()) {
+	srv.mu.Lock()
+	srv.onShutdown = append(srv.onShutdown, f)
+	srv.mu.Unlock()
+}
+
 // Close immediately closes all active net.Listeners and any open connections.
 //
 // Returns any error returned from closing the Server's underlying Listener(s).
@@ -447,13 +474,17 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 	srv.inShutdown.Store(true)
 
 	srv.mu.Lock()
+	srv.logger.Debug("closing listeners")
 	listenErr := srv.closeListenersLocked()
+	srv.logger.Debug("running shutdown hooks")
 	for _, f := range srv.onShutdown {
 		go f()
 	}
 	srv.mu.Unlock()
+	srv.logger.Debug("waiting for listeners to finish closing")
 	srv.listenerGroup.Wait()
 
+	srv.logger.Debug("begin quiescence polling")
 	pollIntervalBase := time.Millisecond
 	nextPollInterval := func() time.Duration {
 		// Add 10% jitter.
@@ -474,6 +505,7 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 		}
 		select {
 		case <-ctx.Done():
+			srv.logger.Warn("graceful shutdown was cancelled by context")
 			return ctx.Err()
 		case <-timer.C:
 			timer.Reset(nextPollInterval())
@@ -481,8 +513,7 @@ func (srv *Server) Shutdown(ctx context.Context) error {
 	}
 }
 
-// closeConns closes all idle connections and reports whether the
-// server is quiescent.
+// closeConns closes all idle connections and reports whether the server is quiescent.
 func (srv *Server) closeConns() bool {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
@@ -495,7 +526,11 @@ func (srv *Server) closeConns() bool {
 			quiescent = false
 			continue
 		}
-		conn.shutdown()
+		if state&StateClosed == 0 && !conn.isShuttingDown() {
+			conn.shutdown()
+			quiescent = false
+			continue
+		}
 		delete(srv.activeConn, conn)
 	}
 	return quiescent
@@ -626,8 +661,9 @@ func (srv *Server) ListenAndServeTLS(certFile, keyFile string) error {
 // net.Listener, accepts them when they arrive, then assigns them to a new
 // instance of irc.Conn
 func (srv *Server) Serve(listen net.Listener) error {
+	logger := srv.logger.WithField("sub-component", "listener")
 	servErr := srv.serve(listen)
-	srv.logger.WithField("sub-component", "listener").Debug("waiting for connections to terminate")
+	logger.Debug("waiting for connections to terminate")
 	srv.connectionGroup.Wait()
 	return servErr
 }
@@ -675,7 +711,7 @@ func (srv *Server) serve(listen net.Listener) error {
 		logger.Debug("listening for connection...")
 		sock, acceptErr := listen.Accept()
 		if srv.shuttingDown() {
-			logger.Debug("server shutting down, listener closed")
+			logger.Debug("server shutting down, no longer accepting new connections")
 		} else {
 			logger.Debug("accepting connection...")
 		}
