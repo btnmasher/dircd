@@ -136,7 +136,7 @@ func (conn *Conn) getState() (state ConnState, unixSec int64) {
 }
 
 func serve(conn *Conn) {
-	logger := conn.logger.WithField("category", "serve")
+	logger := conn.logger.WithField("sub-component", "serve")
 	defer conn.cleanup()
 	conn.start()
 	logger.Info("client connection established")
@@ -211,7 +211,7 @@ func (conn *Conn) isClosed() bool {
 }
 
 func (conn *Conn) readLoop() {
-	logger := conn.logger.WithField("category", "reader")
+	logger := conn.logger.WithField("sub-component", "reader")
 	defer logger.Debug("reader terminated")
 	for {
 		select {
@@ -265,7 +265,7 @@ func (conn *Conn) readLoop() {
 }
 
 func (conn *Conn) writeLoop() {
-	logger := conn.logger.WithField("category", "writer")
+	logger := conn.logger.WithField("sub-component", "writer")
 	defer logger.Debug("writer terminated")
 	for {
 		select {
@@ -300,7 +300,7 @@ func (conn *Conn) Write(buffer *bytes.Buffer) {
 
 func (conn *Conn) write(buffer *bytes.Buffer) {
 	defer bufPool.Recycle(buffer)
-	logger := conn.logger.WithField("category", "writer")
+	logger := conn.logger.WithField("sub-component", "writer")
 
 	recovered := panics.Try(func() {
 		conn.setWriteDeadline()
@@ -332,7 +332,7 @@ func (conn *Conn) write(buffer *bytes.Buffer) {
 }
 
 func (conn *Conn) doHeartbeat() {
-	logger := conn.logger.WithField("category", "heartbeat")
+	logger := conn.logger.WithField("sub-component", "heartbeat")
 	conn.mu.Lock()
 	defer conn.mu.Unlock()
 
@@ -365,7 +365,7 @@ func (conn *Conn) doChatMessage(msg *Message) {
 	targetChannel, chanExists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
 
 	if !userExists && !chanExists {
-		conn.logger.WithField("category", "chat message").Debug("did not find target")
+		conn.logger.WithField("operation", "doChat").Debug("did not find target")
 		conn.ReplyNoSuchNick(msg.Params[0])
 		return
 	}

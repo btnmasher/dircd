@@ -68,7 +68,7 @@ func NewRouter(logger *logrus.Entry) *Router {
 		panic("must provide a logger to NewRouter")
 	}
 
-	log := logger.WithField("category", "router")
+	log := logger.WithField("sub-component", "router")
 	r := &Router{
 		logger:     log,
 		HandlerMap: make(map[string]HandlersChain),
@@ -185,7 +185,7 @@ func (router *Router) Handlers() HandlersInfo {
 }
 
 func (router *Router) PrintHandlers() {
-	logger := router.logger.WithField("category", "Router")
+	logger := router.logger.WithField("sub-component", "Router")
 	logger.Debug("Registered Handlers:")
 	handlers := router.Handlers()
 	chains := make([]string, 0)

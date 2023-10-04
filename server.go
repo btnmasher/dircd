@@ -151,7 +151,7 @@ func WithDefaultLogger() ServerOption {
 		logger := logrus.New()
 		logger.SetFormatter(&nested.Formatter{
 			HideKeys:      true,
-			FieldsOrder:   []string{"component", "category", "operation", "handler"},
+			FieldsOrder:   []string{"component", "sub-component", "operation", "handler"},
 			ShowFullLevel: true,
 		})
 		logger.SetReportCaller(true)
@@ -178,7 +178,7 @@ func WithDefaultLogFormatter() ServerOption {
 	return option(func(s *Server) error {
 		s.logFormatter = &nested.Formatter{
 			HideKeys:      true,
-			FieldsOrder:   []string{"component", "category", "operation", "handler"},
+			FieldsOrder:   []string{"component", "sub-component", "operation", "handler"},
 			ShowFullLevel: true,
 			CallerFirst:   true,
 		}
@@ -552,7 +552,7 @@ func (srv *Server) trackConn(conn *Conn, add bool) {
 // ListenAndServe always returns a non-nil error.
 func (srv *Server) ListenAndServe() error {
 	srv.warmup()
-	logger := srv.logger.WithField("category", "listener")
+	logger := srv.logger.WithField("sub-component", "listener")
 	if srv.listenAddr == nil {
 		addr, addrErr := net.ResolveTCPAddr("tcp", "localhost:6697")
 		if addrErr != nil {
@@ -590,7 +590,7 @@ func (srv *Server) ListenAndServe() error {
 // ListenAndServeTLS always returns a non-nil error.
 func (srv *Server) ListenAndServeTLS(certFile, keyFile string) error {
 	srv.warmup()
-	logger := srv.logger.WithField("category", "listener")
+	logger := srv.logger.WithField("sub-component", "listener")
 	if srv.listenAddr == nil {
 		addr, addrErr := net.ResolveTCPAddr("tcp", "localhost:6697")
 		if addrErr != nil {
@@ -627,7 +627,7 @@ func (srv *Server) ListenAndServeTLS(certFile, keyFile string) error {
 // instance of irc.Conn
 func (srv *Server) Serve(listen net.Listener) error {
 	servErr := srv.serve(listen)
-	srv.logger.WithField("category", "listener").Debug("waiting for connections to terminate")
+	srv.logger.WithField("sub-component", "listener").Debug("waiting for connections to terminate")
 	srv.connectionGroup.Wait()
 	return servErr
 }
@@ -653,7 +653,7 @@ func (oc *onceCloseListener) Close() error {
 }
 
 func (srv *Server) serve(listen net.Listener) error {
-	logger := srv.logger.WithFields(logrus.Fields{"category": "listener"})
+	logger := srv.logger.WithFields(logrus.Fields{"sub-component": "listener"})
 
 	listen = &onceCloseListener{Listener: listen}
 	defer func() {
