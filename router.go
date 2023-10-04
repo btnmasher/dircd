@@ -77,6 +77,7 @@ func NewRouter(logger *logrus.Entry) *Router {
 	r.router = r
 	return r
 }
+
 func (router *Router) addHandler(command string, handlers HandlersChain) {
 	if command == "" {
 		panic("command must not be an empty string")
@@ -109,7 +110,7 @@ func (router *Router) Handle(command string, handlers ...MessageHandler) IRoutes
 	return router.returnRouter()
 }
 
-// HandlerInfo represents a request route's specification which contains the command and its handler.
+// HandlerInfo represents a request route's specification which contains the command and its handler(s).
 type HandlerInfo struct {
 	Command  string
 	Handlers []string
@@ -126,14 +127,6 @@ type RouterGroup struct {
 	Handlers HandlersChain
 }
 
-func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain {
-	finalSize := len(group.Handlers) + len(handlers)
-	mergedHandlers := make(HandlersChain, finalSize)
-	copy(mergedHandlers, group.Handlers)
-	copy(mergedHandlers[len(group.Handlers):], handlers)
-	return mergedHandlers
-}
-
 // Handle registers a new request handle and middleware with the given name and name.
 // The last handler should be the real handler, the other ones should be middleware that can
 // and should be shared among different routes.
@@ -147,6 +140,14 @@ func (group *RouterGroup) Handle(command string, handlers ...MessageHandler) IRo
 func (group *RouterGroup) Use(middleware ...MessageHandler) IRoutes {
 	group.Handlers = append(group.Handlers, middleware...)
 	return group.returnRouter()
+}
+
+func (group *RouterGroup) combineHandlers(handlers HandlersChain) HandlersChain {
+	finalSize := len(group.Handlers) + len(handlers)
+	mergedHandlers := make(HandlersChain, finalSize)
+	copy(mergedHandlers, group.Handlers)
+	copy(mergedHandlers[len(group.Handlers):], handlers)
+	return mergedHandlers
 }
 
 func (group *RouterGroup) returnRouter() IRouter {
@@ -172,7 +173,7 @@ func (group *RouterGroup) Group(handlers ...MessageHandler) *RouterGroup {
 }
 
 // Handlers returns a slice of registered routes, including some useful information, such as:
-// the http name, name and the handler name.
+// the name of the command and the name of the handler or handlers in its chain
 func (router *Router) Handlers() HandlersInfo {
 	info := make(HandlersInfo, 0, len(router.HandlerMap))
 	for command, handlers := range router.HandlerMap {
@@ -184,7 +185,7 @@ func (router *Router) Handlers() HandlersInfo {
 	return info
 }
 
-func (router *Router) PrintHandlers() {
+func (router *Router) printHandlers() {
 	logger := router.logger.WithField("sub-component", "Router")
 	logger.Debug("Registered Handlers:")
 	handlers := router.Handlers()
@@ -218,9 +219,9 @@ func nameOfFunction(f any) string {
 	return path.Base(runtime.FuncForPC(reflect.ValueOf(f).Pointer()).Name())
 }
 
-// RouteCommand accepts an IRC message and routes it to a function
-// in which is designed to process the command.
-func (router *Router) RouteCommand(conn *Conn, msg *Message) {
+// RouteMessage accepts an IRC message and matches it to a function in which is
+// configured to process the command specified in the message
+func (router *Router) RouteMessage(conn *Conn, msg *Message) {
 	defer msgPool.Recycle(msg)
 	log := router.logger.WithField("command", msg.Command)
 	handlers, exists := router.HandlerMap[msg.Command]

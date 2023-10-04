@@ -383,7 +383,7 @@ func (srv *Server) registerHandlers() {
 		registered.Handle(CmdUserhost, HandleUserhost)
 	}
 
-	srv.Router.PrintHandlers()
+	srv.Router.printHandlers()
 }
 
 func (srv *Server) shuttingDown() bool {

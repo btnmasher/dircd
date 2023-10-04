@@ -12,9 +12,8 @@ import (
 	"github.com/btnmasher/dircd/shared/stringutils"
 )
 
-// ReplyWelcome returns the configured welcome message to
-// the user. This is sent when a client first connects
-// and registers successfully.
+// ReplyWelcome returns the configured welcome message to the user.
+// This is sent when a client first connects and registers successfully.
 func (conn *Conn) ReplyWelcome() {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -26,9 +25,9 @@ func (conn *Conn) ReplyWelcome() {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyInvalidCapCommand returns an error message to the user
-// in the event that a CAP command issued by the user is not
-// a valid subcommand per the IRCv3 CAP specifications.
+// ReplyInvalidCapCommand returns an error message to the user in the event that
+// a CAP command issued by the user is not  a valid subcommand per the IRCv3 CAP
+// specifications.
 func (conn *Conn) ReplyInvalidCapCommand(cmd string) {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -52,10 +51,9 @@ func (conn *Conn) ReplyInvalidCapCommand(cmd string) {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNeedMoreParams returns an error message to the user
-// in the event that a command issued by the user that does
-// not satisfy the minimum number of parameters expected of
-// the particular command.
+// ReplyNeedMoreParams returns an error message to the user in the event that
+// a command issued by the user that does not satisfy the minimum number of
+// parameters expected of the particular command.
 func (conn *Conn) ReplyNeedMoreParams(cmd string) {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -79,9 +77,9 @@ func (conn *Conn) ReplyNeedMoreParams(cmd string) {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNoNicknameGiven returns an error message to the user
-// in the event that a command issued by the user that does
-// not satisfy the requirement of specifying a nickname.
+// ReplyNoNicknameGiven returns an error message to the user in the event that
+// a command issued by the user that does not satisfy the requirement of specifying
+// a nickname.
 func (conn *Conn) ReplyNoNicknameGiven() {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -99,10 +97,9 @@ func (conn *Conn) ReplyNoNicknameGiven() {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNoSuchNick returns an error message to the user
-// in the event that a command issued by the user with
-// a target nickname cannot find the target or is unable
-// to know of the targets existence due to permissions.
+// ReplyNoSuchNick returns an error message to the user in the event that a command
+// is issued by the user with a target nickname which cannot be found by the server or
+// if the issuing user is unable to know of the target's existence due to permissions.
 func (conn *Conn) ReplyNoSuchNick(nick string) {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -114,10 +111,9 @@ func (conn *Conn) ReplyNoSuchNick(nick string) {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNoSuchChan returns an error message to the user
-// in the event that a command issued by the user with
-// a target channel cannot find the target or is unable
-// to know of the targets existence due to permissions.
+// ReplyNoSuchChan returns an error message to the user in the event that a command
+// is issued by the user with a target channel which cannot be found by the server or
+// if the issuing user is unable to know of the target's existence due to permissions.
 func (conn *Conn) ReplyNoSuchChan(channel string) {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -129,9 +125,8 @@ func (conn *Conn) ReplyNoSuchChan(channel string) {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNotImplemented returns an error message to the user
-// in the event the given command is not apart of the handlers
-// found in RouteCommand()
+// ReplyNotImplemented returns an error message to the user in the event the given
+// command is not a part of the handlers defined for use by RouteMessage()
 func (conn *Conn) ReplyNotImplemented(cmd string) {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)
@@ -142,9 +137,8 @@ func (conn *Conn) ReplyNotImplemented(cmd string) {
 	conn.Write(msg.RenderBuffer())
 }
 
-// ReplyNotRegistered returns an error message to the user
-// in the event the given command is not a part of the handlers
-// found in RouteCommand()
+// ReplyNotRegistered returns an error message to the user when they attempt to use
+// a command which requires the user to first be registered with the server.
 func (conn *Conn) ReplyNotRegistered() {
 	msg := conn.newMessage()
 	defer msgPool.Recycle(msg)

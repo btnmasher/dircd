@@ -259,7 +259,7 @@ func (conn *Conn) readLoop() {
 
 			conn.heartbeat.Reset(pingTimeout)
 
-			conn.server.Router.RouteCommand(conn, msg)
+			conn.server.Router.RouteMessage(conn, msg)
 		}
 	}
 }
