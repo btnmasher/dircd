@@ -589,7 +589,7 @@ func (srv *Server) ListenAndServe() error {
 	srv.warmup()
 	logger := srv.logger.WithField("sub-component", "listener")
 	if srv.listenAddr == nil {
-		addr, addrErr := net.ResolveTCPAddr("tcp", "localhost:6697")
+		addr, addrErr := net.ResolveTCPAddr("tcp", "localhost:6667")
 		if addrErr != nil {
 			return errors.Join(addrErr, errors.New("error attempting to use fallback default address"))
 		}
