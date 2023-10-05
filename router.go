@@ -1,3 +1,10 @@
+/*
+   Copyright (c) 2023, btnmasher
+   All rights reserved.
+   Use of this source code is governed by a BSD-style
+   license that can be found in the LICENSE file.
+*/
+
 package dircd
 
 import (
@@ -80,15 +87,15 @@ func NewRouter(logger *logrus.Entry) *Router {
 
 func (router *Router) addHandler(command string, handlers HandlersChain) {
 	if command == "" {
-		panic("command must not be an empty string")
+		router.logger.Panicln("command must not be an empty string")
 	}
 
 	if len(handlers) == 0 {
-		panic("there must be at least one handler")
+		router.logger.Panicln("there must be at least one handler")
 	}
 
 	if _, exists := router.HandlerMap[command]; exists {
-		panic(fmt.Sprintf("handler(s) already registered for command: %s", command))
+		router.logger.Panicln(fmt.Sprintf("handler(s) already registered for command: %s", command))
 	}
 
 	router.HandlerMap[command] = handlers
@@ -161,7 +168,7 @@ func (group *RouterGroup) returnRouter() IRouter {
 // For example, all the routes that use a common middleware for authorization could be grouped.
 func (group *RouterGroup) Group(handlers ...MessageHandler) *RouterGroup {
 	if len(handlers) == 0 {
-		panic("a group must have at least one handler")
+		group.router.logger.Panicln("a group must have at least one handler")
 	}
 
 	newGroup := &RouterGroup{

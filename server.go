@@ -20,11 +20,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	nested "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc"
 
 	"github.com/btnmasher/dircd/shared/concurrentmap"
+	"github.com/btnmasher/dircd/shared/logfmt"
 	"github.com/btnmasher/dircd/shared/pool"
 )
 
@@ -36,6 +36,17 @@ var msgPool = pool.New(NewMessage)
 
 // Reference to the global bytes.Buffer object pool.
 var bufPool = pool.New(func() *bytes.Buffer { return &bytes.Buffer{} })
+
+var defaultFormatter = logfmt.New(
+	logfmt.HideKeys(true),
+	logfmt.ShowFullLevel(true),
+	logfmt.WithFieldsOrder("component", "sub-component", "operation", "handler"),
+	logfmt.WithStyleConfig(logfmt.NewStyle(
+		logfmt.WithPanicForeground(logfmt.ANSIBrightWhite),
+		logfmt.WithPanicBackground(logfmt.ANSIRed),
+		logfmt.WithPanicStyle(logfmt.TextStyle{}.Bold().Blink()),
+	)),
+)
 
 // Server holds the state of an IRC server instance.
 type Server struct {
@@ -153,11 +164,7 @@ func (srv *Server) Network() string {
 func WithDefaultLogger() ServerOption {
 	return option(func(s *Server) error {
 		logger := logrus.New()
-		logger.SetFormatter(&nested.Formatter{
-			HideKeys:      true,
-			FieldsOrder:   []string{"component", "sub-component", "operation", "handler"},
-			ShowFullLevel: true,
-		})
+		logger.SetFormatter(defaultFormatter)
 		logger.SetReportCaller(true)
 		s.logger = logger.WithField("component", "irc-server")
 		return nil
@@ -180,12 +187,7 @@ func WithLogFormatter(formatter logrus.Formatter) ServerOption {
 
 func WithDefaultLogFormatter() ServerOption {
 	return option(func(s *Server) error {
-		s.logFormatter = &nested.Formatter{
-			HideKeys:      true,
-			FieldsOrder:   []string{"component", "sub-component", "operation", "handler"},
-			ShowFullLevel: true,
-			CallerFirst:   true,
-		}
+		s.logFormatter = defaultFormatter
 		return nil
 	})
 }

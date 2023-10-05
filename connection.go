@@ -124,7 +124,7 @@ func (conn *Conn) setState(state ConnState) {
 		srv.trackConn(conn, false)
 	}
 	if state > 0xff || state < 0 {
-		panic("internal error")
+		conn.logger.Panicln("attempted to set invalid connection state")
 	}
 	packedState := uint64(time.Now().Unix()<<8) | uint64(state)
 	conn.curState.Store(packedState)
