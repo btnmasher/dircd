@@ -136,9 +136,9 @@ func (conn *Conn) getState() (state ConnState, unixSec int64) {
 }
 
 func serve(conn *Conn) {
-	logger := conn.logger.WithField("sub-component", "serve")
 	defer conn.cleanup()
 	conn.start()
+	logger := conn.logger.WithField("sub-component", "serve")
 	logger.Info("client connection established")
 
 	recovered := panics.Try(func() {
@@ -248,7 +248,7 @@ func (conn *Conn) readLoop() {
 			}
 
 			data := conn.incoming.Text()
-			logger.Infof("received: [%s]", data)
+			logger.Debugf("received: [%s]", data)
 
 			msg, parseErr := Parse(data)
 			if parseErr != nil {
@@ -319,7 +319,7 @@ func (conn *Conn) write(buffer *bytes.Buffer) {
 			return
 		}
 
-		logger.Infof("sent: [%s]", strings.TrimSpace(buffer.String()))
+		logger.Debugf("sent: [%s]", strings.TrimSpace(buffer.String()))
 	})
 
 	panicErr := recovered.AsError()
