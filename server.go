@@ -21,28 +21,21 @@ import (
 	"time"
 
 	nested "github.com/antonfisher/nested-logrus-formatter"
-	"github.com/btnmasher/util"
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc"
 
 	"github.com/btnmasher/dircd/shared/concurrentmap"
-	"github.com/btnmasher/dircd/shared/itempool"
+	"github.com/btnmasher/dircd/shared/pool"
 )
 
 // keepAliveTimeout sets the connection timeout duration on the client IRC connections.
 const keepAliveTimeout = 2 * time.Minute
 
-// messagePoolMax sets the message pool buffer length
-const messagePoolMax = 1000
-
-// bufferPoolMax sets the bytes.Buffer pool length
-const bufferPoolMax = 1000
-
 // Reference to the global Message object pool.
-var msgPool = itempool.New(messagePoolMax, NewMessage)
+var msgPool = pool.New(NewMessage)
 
 // Reference to the global bytes.Buffer object pool.
-var bufPool = util.NewBufferPool(bufferPoolMax)
+var bufPool = pool.New(func() *bytes.Buffer { return &bytes.Buffer{} })
 
 // Server holds the state of an IRC server instance.
 type Server struct {
@@ -134,9 +127,6 @@ func (srv *Server) warmup() {
 
 	logger.Info("populating ISupport")
 	srv.populateISupport()
-
-	logger.Info("warming up message pool")
-	msgPool.Warmup(messagePoolMax)
 }
 
 func (srv *Server) broadcastShutdownNotice() {

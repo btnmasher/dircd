@@ -140,7 +140,7 @@ func (msg *Message) Debug() string {
 	return string(data)
 }
 
-func (msg *Message) Scrub() {
+func (msg *Message) Reset() {
 	clear(msg.Tags)
 	msg.Source = ""
 	msg.Command = ""

@@ -5,7 +5,7 @@
    license that can be found in the LICENSE file.
 */
 
-package itempool
+package pool
 
 import (
 	"math/rand"
@@ -20,7 +20,7 @@ type mockItem struct {
 	data  []int
 }
 
-func (i *mockItem) Scrub() {
+func (i *mockItem) Reset() {
 	i.value = 0
 	i.data = nil
 }
@@ -45,8 +45,7 @@ func TestItemPool(t *testing.T) {
 
 	for _, tc := range cases {
 		// Create a new pool and warm it up
-		pool := New[*mockItem](100, initItem)
-		pool.Warmup(tc.num)
+		pool := New[*mockItem](initItem)
 
 		// Check if the items in the pool are as expected
 		for i := 0; i < tc.num; i++ {
