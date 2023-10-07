@@ -23,7 +23,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc/panics"
 
-	"github.com/btnmasher/dircd/shared/concurrentmap"
+	"github.com/btnmasher/dircd/shared/safemap"
 
 	"github.com/btnmasher/random"
 )
@@ -91,7 +91,7 @@ func NewConn(ctx context.Context, srv *Server, sck net.Conn, logger *logrus.Entr
 		sock:       sck,
 		hostname:   srv.Hostname(),
 		heartbeat:  time.NewTimer(pingTimeout),
-		channels:   concurrentmap.New[string, *Channel](),
+		channels:   safemap.NewMutexMap[string, *Channel](),
 		incoming:   bufio.NewScanner(sck),
 		outgoing:   bufio.NewWriter(sck),
 		writeQueue: make(chan *bytes.Buffer, writeQueueLength),
@@ -116,12 +116,11 @@ const (
 )
 
 func (conn *Conn) setState(state ConnState) {
-	srv := conn.server
 	switch state {
 	case StateNew:
-		srv.trackConn(conn, true)
+		conn.server.trackConn(conn, true)
 	case StateClosed:
-		srv.trackConn(conn, false)
+		conn.server.trackConn(conn, false)
 	}
 	if state > 0xff || state < 0 {
 		conn.logger.Panicln("attempted to set invalid connection state")
@@ -360,9 +359,21 @@ func (conn *Conn) doChatMessage(msg *Message) {
 	}
 
 	// TODO: Send Message permission check
+	target := strings.ToLower(msg.Params[0])
 
-	targetUser, userExists := conn.server.Nicks.Get(strings.ToLower(msg.Params[0]))
-	targetChannel, chanExists := conn.server.Channels.Get(strings.ToLower(msg.Params[0]))
+	targetUser, userExists := conn.server.Nicks.Get(target)
+	var targetChannel *Channel
+	var chanExists bool
+	if !userExists {
+		// Check if the target is a channel first in the user's connection context (most common path)
+		// to avoid a contentious read on the server's map
+		targetChannel, chanExists = conn.channels.Get(target)
+
+		if !chanExists {
+			// Didn't find it on the user's context, try the server's
+			targetChannel, chanExists = conn.server.Channels.Get(target)
+		}
+	}
 
 	if !userExists && !chanExists {
 		conn.logger.WithField("operation", "doChat").Debug("did not find target")

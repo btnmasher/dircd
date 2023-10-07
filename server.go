@@ -23,9 +23,9 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/sourcegraph/conc"
 
-	"github.com/btnmasher/dircd/shared/concurrentmap"
 	"github.com/btnmasher/dircd/shared/logfmt"
 	"github.com/btnmasher/dircd/shared/pool"
+	"github.com/btnmasher/dircd/shared/safemap"
 )
 
 // keepAliveTimeout sets the connection timeout duration on the client IRC connections.
@@ -35,7 +35,14 @@ const keepAliveTimeout = 2 * time.Minute
 var msgPool = pool.New(NewMessage)
 
 // Reference to the global bytes.Buffer object pool.
-var bufPool = pool.New(func() *bytes.Buffer { return &bytes.Buffer{} })
+var bufPool = pool.New(func() *bytes.Buffer {
+	buf := bytes.Buffer{}
+	// Grow the new buffer to the expected maximum size of a message, as this helps with
+	// sync.Pool efficiency as it expects objects stored to be "similar" and reduces
+	// allocations due to dynamic growth
+	buf.Grow(MaxMsgLength + MaxTagsLength)
+	return &buf
+})
 
 var defaultFormatter = logfmt.New(
 	logfmt.HideKeys(true),
@@ -58,7 +65,7 @@ type Server struct {
 	logger       *logrus.Entry
 	logLevel     logrus.Level
 	logFormatter logrus.Formatter
-	support      concurrentmap.ConcurrentMap[string, string]
+	support      safemap.SafeMap[string, string]
 	listenAddr   *net.TCPAddr
 	tlsConfig    *tls.Config
 
@@ -94,10 +101,10 @@ func (o option) apply(s *Server) error {
 func NewServer(options ...ServerOption) (*Server, error) {
 	server := &Server{
 		logLevel: logrus.InfoLevel,
-		Users:    concurrentmap.New[string, *User](),
-		Nicks:    concurrentmap.New[string, *User](),
-		Channels: concurrentmap.New[string, *Channel](),
-		support:  concurrentmap.New[string, string](),
+		Users:    safemap.NewSyncMap[string, *User](),
+		Nicks:    safemap.NewSyncMap[string, *User](),
+		Channels: safemap.NewSyncMap[string, *Channel](),
+		support:  safemap.NewSyncMap[string, string](),
 	}
 
 	server.registerOnShutdown(server.broadcastShutdownNotice)

@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/btnmasher/dircd/shared/concurrentmap"
+	"github.com/btnmasher/dircd/shared/safemap"
 )
 
 // Channel represents an IRC channel
@@ -36,29 +36,29 @@ type Channel struct {
 
 	// Persisted Lists
 	// map[hostPattern]setter
-	OpList     concurrentmap.ConcurrentMap[string, string]
-	HalfOpList concurrentmap.ConcurrentMap[string, string]
-	VoiceList  concurrentmap.ConcurrentMap[string, string]
-	BanList    concurrentmap.ConcurrentMap[string, string]
-	InviteList concurrentmap.ConcurrentMap[string, string]
+	OpList     safemap.SafeMap[string, string]
+	HalfOpList safemap.SafeMap[string, string]
+	VoiceList  safemap.SafeMap[string, string]
+	BanList    safemap.SafeMap[string, string]
+	InviteList safemap.SafeMap[string, string]
 }
 
-type ChanMap concurrentmap.ConcurrentMap[string, *Channel]
+type ChanMap safemap.SafeMap[string, *Channel]
 
 // NewChannel initializes a Channel with the given name and owner.
 func NewChannel(cname string, creator *User) *Channel {
 	channel := &Channel{
 		name:       cname,
 		owner:      creator,
-		Nicks:      concurrentmap.New[string, *User](),
-		Ops:        concurrentmap.New[string, *User](),
-		HalfOps:    concurrentmap.New[string, *User](),
-		Voiced:     concurrentmap.New[string, *User](),
-		OpList:     concurrentmap.New[string, string](),
-		HalfOpList: concurrentmap.New[string, string](),
-		VoiceList:  concurrentmap.New[string, string](),
-		BanList:    concurrentmap.New[string, string](),
-		InviteList: concurrentmap.New[string, string](),
+		Nicks:      safemap.NewMutexMap[string, *User](),
+		Ops:        safemap.NewMutexMap[string, *User](),
+		HalfOps:    safemap.NewMutexMap[string, *User](),
+		Voiced:     safemap.NewMutexMap[string, *User](),
+		OpList:     safemap.NewMutexMap[string, string](),
+		HalfOpList: safemap.NewMutexMap[string, string](),
+		VoiceList:  safemap.NewMutexMap[string, string](),
+		BanList:    safemap.NewMutexMap[string, string](),
+		InviteList: safemap.NewMutexMap[string, string](),
 	}
 
 	return channel

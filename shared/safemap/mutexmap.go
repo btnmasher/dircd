@@ -1,63 +1,47 @@
-/*
-   Copyright (c) 2023, btnmasher
-   All rights reserved.
-   Use of this source code is governed by a BSD-style
-   license that can be found in the LICENSE file.
-*/
-
-package concurrentmap
+package safemap
 
 import (
 	"errors"
 	"sync"
 )
 
-type ConcurrentMap[K comparable, V any] interface {
-	Length() int
-	Get(K) (V, bool)
-	Set(K, V)
-	ChangeKey(K, K) bool
-	Delete(K) bool
-	Exists(K) bool
-	Keys() []K
-	Values() []V
-	KeysIter() <-chan K
-	ValuesItr() <-chan V
-	ForEach(func(K, V) error) error
-	Clear()
-}
-
-func New[K comparable, V any]() ConcurrentMap[K, V] {
-	return &concurrentMapImpl[K, V]{
+// NewMutexMap returns a generic SafeMap underpinned by a Go map with common methods
+// wrapped in a sync.RWMutex
+//
+// This map type is preferred for general use for concurrency-safe operations, but not for
+// situations where there could be high read lock contention on an individual instance of
+// this type of Map. For low write, high read contention variant of SafeMap, try NewSyncMap
+func NewMutexMap[K comparable, V any]() SafeMap[K, V] {
+	return &mutexMap[K, V]{
 		m: make(map[K]V),
 	}
 }
 
-type concurrentMapImpl[K comparable, V any] struct {
+type mutexMap[K comparable, V any] struct {
 	mu sync.RWMutex
 	m  map[K]V
 }
 
-func (cm *concurrentMapImpl[K, V]) Length() int {
+func (cm *mutexMap[K, V]) Length() int {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	return len(cm.m)
 }
 
-func (cm *concurrentMapImpl[K, V]) Get(key K) (V, bool) {
+func (cm *mutexMap[K, V]) Get(key K) (V, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	value, ok := cm.m[key]
 	return value, ok
 }
 
-func (cm *concurrentMapImpl[K, V]) Set(key K, value V) {
+func (cm *mutexMap[K, V]) Set(key K, value V) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	cm.m[key] = value
 }
 
-func (cm *concurrentMapImpl[K, V]) ChangeKey(oldKey K, newKey K) bool {
+func (cm *mutexMap[K, V]) ChangeKey(oldKey K, newKey K) bool {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	if value, exists := cm.m[oldKey]; exists {
@@ -68,24 +52,20 @@ func (cm *concurrentMapImpl[K, V]) ChangeKey(oldKey K, newKey K) bool {
 	return false
 }
 
-func (cm *concurrentMapImpl[K, V]) Delete(key K) bool {
+func (cm *mutexMap[K, V]) Delete(key K) {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	if _, exists := cm.m[key]; exists {
-		delete(cm.m, key)
-		return true
-	}
-	return false
+	delete(cm.m, key)
 }
 
-func (cm *concurrentMapImpl[K, V]) Exists(key K) bool {
+func (cm *mutexMap[K, V]) Exists(key K) bool {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	_, ok := cm.m[key]
 	return ok
 }
 
-func (cm *concurrentMapImpl[K, V]) Keys() []K {
+func (cm *mutexMap[K, V]) Keys() []K {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	keys := make([]K, 0, len(cm.m))
@@ -95,7 +75,7 @@ func (cm *concurrentMapImpl[K, V]) Keys() []K {
 	return keys
 }
 
-func (cm *concurrentMapImpl[K, V]) Values() []V {
+func (cm *mutexMap[K, V]) Values() []V {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	vals := make([]V, 0, len(cm.m))
@@ -105,7 +85,7 @@ func (cm *concurrentMapImpl[K, V]) Values() []V {
 	return vals
 }
 
-func (cm *concurrentMapImpl[K, V]) KeysIter() <-chan K {
+func (cm *mutexMap[K, V]) KeysIter() <-chan K {
 	cm.mu.RLock()
 	ch := make(chan K, len(cm.m))
 	go func() {
@@ -118,7 +98,7 @@ func (cm *concurrentMapImpl[K, V]) KeysIter() <-chan K {
 	return ch
 }
 
-func (cm *concurrentMapImpl[K, V]) ValuesItr() <-chan V {
+func (cm *mutexMap[K, V]) ValuesIter() <-chan V {
 	cm.mu.RLock()
 	ch := make(chan V, len(cm.m))
 	go func() {
@@ -131,7 +111,7 @@ func (cm *concurrentMapImpl[K, V]) ValuesItr() <-chan V {
 	return ch
 }
 
-func (cm *concurrentMapImpl[K, V]) ForEach(do func(K, V) error) error {
+func (cm *mutexMap[K, V]) ForEach(do func(K, V) error) error {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 	var errs error
@@ -143,7 +123,7 @@ func (cm *concurrentMapImpl[K, V]) ForEach(do func(K, V) error) error {
 	return errs
 }
 
-func (cm *concurrentMapImpl[K, V]) Clear() {
+func (cm *mutexMap[K, V]) Clear() {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 	clear(cm.m)
