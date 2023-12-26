@@ -25,7 +25,7 @@ import (
 
 	"github.com/btnmasher/dircd/shared/safemap"
 
-	"github.com/btnmasher/random"
+	"github.com/btnmasher/dircd/shared/random"
 )
 
 // Conn represents the server side of an IRC connection.
