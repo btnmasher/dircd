@@ -10,8 +10,9 @@ package dircd
 import (
 	"bytes"
 	"sync"
+	"sync/atomic"
 
-	"github.com/btnmasher/dircd/shared/concurrentmap"
+	"github.com/btnmasher/dircd/shared/safemap"
 )
 
 // User holds all the state in the context of a connected user.
@@ -23,14 +24,14 @@ type User struct {
 	host          string
 	real          string
 	vanityHost    string
-	vanityEnabled bool
+	vanityEnabled atomic.Bool
 	perm          uint8
 	mode          uint64
 
 	conn *Conn
 }
 
-type UserMap concurrentmap.ConcurrentMap[string, *User]
+type UserMap safemap.SafeMap[string, *User]
 
 // // NewUser returns a new instance of a user object with the given parameters
 // func NewUser(nickname, username, realname, hostname string) *User {
@@ -59,7 +60,7 @@ func (user *User) Hostmask() string {
 	buffer.WriteString(user.name)
 	buffer.WriteString("@")
 
-	if user.vanityEnabled && len(user.vanityHost) > 0 {
+	if user.VanityEnabled() && len(user.vanityHost) > 0 {
 		buffer.WriteString(user.vanityHost)
 	} else {
 		buffer.WriteString(user.host)
@@ -142,80 +143,67 @@ func (user *User) VanityHost() string {
 	return user.vanityHost
 }
 
-// SetVanityHost sets the vanityhost field of the user in a
-// concurrency-safe manner.
+// SetVanityHost sets the vanityhost field of the user in a concurrency-safe manner.
 func (user *User) SetVanityHost(new string) {
 	user.mu.Lock()
 	defer user.mu.Unlock()
 	user.vanityHost = new
 }
 
-// Permission returns the permission field of the user in a
-// concurrency-safe manner.
+// Permission returns the permission field of the user in a concurrency-safe manner.
 func (user *User) Permission() uint8 {
 	user.mu.RLock()
 	defer user.mu.RUnlock()
 	return user.perm
 }
 
-// SetPermission the permission field of the user in a
-// concurrency-safe manner.
+// SetPermission the permission field of the user in a concurrency-safe manner.
 func (user *User) SetPermission(new uint8) {
 	user.mu.Lock()
 	defer user.mu.Unlock()
 	user.perm = new
 }
 
-// Mode returns the mode field of the user in a
-// concurrency-safe manner.
+// Mode returns the mode field of the user in a concurrency-safe manner.
 func (user *User) Mode() uint64 {
 	user.mu.RLock()
 	defer user.mu.RUnlock()
 	return user.mode
 }
 
-// AddMode appends the specified mode flag to the user in a
-// concurrency-safe manner.
+// AddMode appends the specified mode flag to the user in a concurrency-safe manner.
 func (user *User) AddMode(umode uint64) {
 	user.mu.Lock()
 	defer user.mu.Unlock()
 	user.mode |= umode
 }
 
-// DelMode removes the specified mode flag from the user in a
-// concurrency-safe manner.
+// DelMode removes the specified mode flag from the user in a  concurrency-safe manner.
 func (user *User) DelMode(umode uint64) {
 	user.mu.Lock()
 	defer user.mu.Unlock()
 	user.mode &^= umode
 }
 
-// ModeIsSet checks if a given user mode is currently
-// set in a concurrency-safe manner.
+// ModeIsSet checks if a given user mode is currently set in a concurrency-safe manner.
 func (user *User) ModeIsSet(umode uint64) bool {
 	user.mu.Lock()
 	defer user.mu.Unlock()
 	return user.mode&umode == umode
 }
 
-// VanityEnabled returns the vanityenabled field of the user in a
-// concurrency-safe manner.
+// VanityEnabled returns the vanity enabled state of the user in a concurrency-safe manner.
 func (user *User) VanityEnabled() bool {
-	user.mu.RLock()
-	defer user.mu.RUnlock()
-	return user.vanityEnabled
+	return user.vanityEnabled.Load()
 }
 
-// SetVanityEnabled the vanityenabled field of the user in a
-// concurrency-safe manner.
+// SetVanityEnabled sets vanity enabled state of the user in a concurrency-safe manner.
 func (user *User) SetVanityEnabled(new bool) {
-	user.mu.Lock()
-	defer user.mu.Unlock()
-	user.vanityEnabled = new
+	user.vanityEnabled.Store(new)
 }
 
-// HigherPerms checks if the given target User has a higher
-// permission level than the Given user being checked.
+// HigherPerms checks if the given target User has a higher permission level than
+// the Given user being checked.
 func (user *User) HigherPerms(target uint8) bool {
 	user.mu.RLock()
 	defer user.mu.RUnlock()

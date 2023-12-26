@@ -21,10 +21,10 @@ import (
 type Channel struct {
 	mu sync.RWMutex
 
-	name  string
-	topic string
-
-	modes uint64
+	name      string
+	topic     string
+	modes     uint64
+	createdAt time.Time
 
 	owner      *User
 	savedOwner string // Owner username

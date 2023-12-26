@@ -45,8 +45,8 @@ type UModeReq struct {
 	Target uint8
 }
 
-// UModeReqs is a map of usermodes with required setter/target permissions levels defined.
-var UModeReqs = map[uint64]UModeReq{
+// uModeReqs is a map of usermodes with required setter/target permissions levels defined.
+var uModeReqs = map[uint64]UModeReq{
 	UModeAway:        {UPermUser, UPermUser},
 	UModeAdmin:       {UPermServer, UPermUser},
 	UModeBot:         {UPermNetOp, UPermUser},
@@ -89,13 +89,12 @@ var UModeReqs = map[uint64]UModeReq{
 // If the mode is already present on the user, then this function will return
 // ErrModeAlreadySet
 func SetUserMode(umode uint64, setter, target *User) error {
-	setter.mu.Lock()
+	setter.mu.RLock()
 	target.mu.Lock()
-	defer setter.mu.Unlock()
+	defer setter.mu.RUnlock()
 	defer target.mu.Unlock()
-	// TODO: fix these exported mutexes or figure out a way to get the needed details first
 
-	reqs, exists := UModeReqs[umode]
+	reqs, exists := uModeReqs[umode]
 	if !exists {
 		return ErrUnknownMode
 	}
@@ -123,7 +122,7 @@ func SetUserMode(umode uint64, setter, target *User) error {
 	return nil
 }
 
-// UnsetUserMode is  used to unset a mode on a target user.
+// UnsetUserMode is used to unset a mode on a target user.
 //
 // This function will lock both setter and target user mutexes.
 //
@@ -137,13 +136,13 @@ func SetUserMode(umode uint64, setter, target *User) error {
 // If the mode is not already present on the user, then this function will return
 // ErrModeNotSet
 func UnsetUserMode(umode uint64, setter, target *User) error {
-	setter.mu.Lock()
+	setter.mu.RLock()
 	target.mu.Lock()
-	defer setter.mu.Unlock()
+	defer setter.mu.RUnlock()
 	defer target.mu.Unlock()
 	// TODO: figure out these exported mutexes
 
-	reqs, exists := UModeReqs[umode]
+	reqs, exists := uModeReqs[umode]
 	if !exists {
 		return ErrUnknownMode
 	}
